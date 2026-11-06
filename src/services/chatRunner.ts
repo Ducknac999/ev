@@ -30,7 +30,7 @@ import { describeModel, parseModelCommand } from "./modelCommands";
 import { findRecipe, recipePrompt, routeOf } from "./recipes";
 import { findLearned, isForgetRequest, replay, Trail } from "./learned";
 import { MAC_TOOLS } from "../providers/agent/macTools";
-import { announce, type AnnounceMode } from "./announce";
+import { announce, announceImportant, type AnnounceMode } from "./announce";
 import { requestKind } from "./requestKind";
 import { supersedeLooks } from "../providers/slimHistory";
 import { nameChat } from "./chatNames";
@@ -560,7 +560,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   const helpersNote = offerHelpers
     ? `# Helpers\nThis request may have separate parts. If it has 2–3 parts that each need their own look-ups (searches, pages, files) and don't depend on each other, call ${SPLIT_TOOL} first instead of researching them yourself: each helper gets its own searches (you only get ${MAX_SEARCHES_PER_TASK} for the whole task) and they run at the same time, so the answer is faster and better. Then write the answer from their reports. If the request is really one question or the parts depend on each other, just do it yourself.`
     : "";
-  const turnNotes = ["# For this request", nowNote(), recipe ? recipePrompt(recipe) : "", sharedTabs, spokenStyle.trim(), planSystem.trim(), helpersNote].filter(Boolean).join("\n\n");
+  const turnNotes = ["# For this request", nowNote(), options.announce ? "Heard by voice: words, days and times may have been misheard." : "", recipe ? recipePrompt(recipe) : "", sharedTabs, spokenStyle.trim(), planSystem.trim(), helpersNote].filter(Boolean).join("\n\n");
   let base: unknown[] = [];
   const turnItems: unknown[] = [];
   const trail = new Trail();
@@ -1432,7 +1432,8 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     }
     if (workspace) await addReview(chatId, reply.id, workspace);
     if (options.speak) speechQueue.feed(reply.id, spoken, true, label);
-    else if (options.announce) void announce(spoken, options.announce, voiceLabel(chatId), content, chatId);
+    else if (options.announce) void announce(spoken, options.announce, voiceLabel(chatId), content, chatId).then((why) => why.note && useChats.getState().patchMessage(chatId, reply.id, { voiceNote: why.note }));
+    else if (spoken.trim()) useChats.getState().patchMessage(chatId, reply.id, { voiceNote: "🔇 Not spoken: you typed (say “…out loud” to hear it)" });
     const finished = useChats.getState().chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === reply.id);
     const hadActions = finished?.blocks?.some((b) => b.type === "tool");
     const route = routeOf((finished?.blocks ?? []).flatMap((b) => (b.type === "tool" ? [b.step] : [])));
@@ -1470,6 +1471,8 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       error: aborted ? (spoken ? undefined : "Stopped") : err instanceof Error ? err.message : String(err),
     });
     useChats.getState().setStatus(chatId, aborted ? "idle" : "error");
+    // A task that failed is never silent: out loud and in the notch (see announceImportant).
+    if (!aborted) void announceImportant(`${chat.title}: that didn't work. ${(err instanceof Error ? err.message : String(err)).slice(0, 140)}`);
   } finally {
     controllers.delete(chatId);
     closeApprovalWindow(chatId);

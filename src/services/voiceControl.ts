@@ -6,7 +6,7 @@ import { notchMessage, sttTranscribe, vadReset, voiceEngineWarm, voiceFrame } fr
 import { activeChats, useChats } from "../store/chats";
 import type { Chat } from "../types";
 import { useSettings } from "../store/settings";
-import { speakerOn, useVoice } from "../store/voice";
+import { useVoice } from "../store/voice";
 import { sendMessage } from "./chatRunner";
 import { activeVoiceApproval, hearForApproval } from "./voiceApproval";
 import { findWake, isEndPhrase, isStopCommand, parseWake, soundsUnfinished } from "./wakeWord";
@@ -421,7 +421,8 @@ class Conversation {
     const attachments = useDrafts.getState().take(chatId);
     // With the speaker on, the finished answer is spoken — or, over music, a short confirmation shows
     // in the notch and a real answer pauses the music while it's said (see announce).
-    const voice = speakerOn(chatId) ? ({ speak: false, announce: "talk" } as const) : { speak: false };
+    // Spoken request → spoken answer (one rule: services/announce.ts).
+    const voice = { speak: false, announce: "talk" } as const;
     // Turbo (optional): Gemini Live speaks chat-style answers; tasks, files and instant commands go the normal way.
     if (!attachments.length && turboEnabled() && !parseQuickCommand(text)) {
       const answered = await turboReply(chatId, text);

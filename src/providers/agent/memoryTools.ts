@@ -1,5 +1,6 @@
 import { passphraseCheck } from "../../lib/ipc";
-import { describeEvent, upcoming } from "../../services/schedule";
+import { describeEvent, readBack, syncToCalendar, upcoming } from "../../services/schedule";
+import { announceImportant } from "../../services/announce";
 import { useSettings } from "../../store/settings";
 import { useVault } from "../../store/vault";
 import type { MemoryItem, MemoryKind, Repeat, ScheduleItem, UndoInfo } from "../../types";
@@ -210,7 +211,10 @@ export async function executeMemoryTool(name: string, args: Record<string, unkno
       const repeat = REPEATS.includes(args.repeat as Repeat) ? (args.repeat as Repeat) : "none";
       const event = vault.addEvent({ title: str(args.title) || "Event", start, timeZone: zone, repeat, until: str(args.until) || undefined, notes: str(args.notes) || undefined });
       const past = at < Date.now() && repeat === "none" ? " Note: that time is already in the past — tell the user." : "";
-      return { output: `Added ${event.id}: ${describeEvent(event)}.${past}`, display: describeEvent(event), ok: true, undo: { type: "event-added", id: event.id } };
+      // In the Mac's Calendar too (it rings even when E.V is closed), and said back so a misheard day or time is caught.
+      syncToCalendar("upsert", event);
+      void announceImportant(`Reminder set. ${readBack(event)}`);
+      return { output: `Added ${event.id}: ${describeEvent(event)}.${past} It's in Calendar too, and E.V read it back to the user out loud.`, display: describeEvent(event), ok: true, undo: { type: "event-added", id: event.id } };
     }
     case "schedule_update": {
       if (!userAskedFor(name, ctx.userText)) return { output: NOT_ASKED, display: "", ok: false };
@@ -227,12 +231,15 @@ export async function executeMemoryTool(name: string, args: Record<string, unkno
       if (args.until !== undefined) patch.until = str(args.until) || undefined;
       if (args.notes !== undefined) patch.notes = str(args.notes) || undefined;
       const after = vault.updateEvent(id, patch)!;
+      syncToCalendar("upsert", after);
+      void announceImportant(`Reminder changed. ${readBack(after)}`);
       return { output: `Updated ${id}: ${describeEvent(after)}.`, display: describeEvent(after), ok: true, undo: { type: "event-changed", before } };
     }
     case "schedule_delete": {
       if (!userAskedFor(name, ctx.userText)) return { output: NOT_ASKED, display: "", ok: false };
       const gone = vault.removeEvent(str(args.id));
       if (!gone) return { output: `No event with id ${str(args.id)}.`, display: "Event not found", ok: false };
+      syncToCalendar("delete", gone);
       return { output: `Deleted: ${describeEvent(gone)}.`, display: describeEvent(gone), ok: true, undo: { type: "event-removed", item: gone } };
     }
     case "schedule_list": {
@@ -274,7 +281,7 @@ export function memoryPrompt(chatId: string, now = Date.now()): string {
     chat.length ? chat.map(line).join("\n") : "(nothing yet)",
     "",
     "# Schedule",
-    `Only add, change or delete events when the user explicitly tells you to (\"add…\", \"schedule…\", \"remind me…\", \"move…\", \"cancel…\"). Mentioning a plan (\"I have gym at 6\", \"dentist on Tuesday\") is not a request: don't add it, don't suggest remembering it, and don't ask whether to add it — just reply naturally. Times are the user's local time unless they say otherwise; work out dates like \"tomorrow\" or \"next Tuesday\" from the current date. Confirm with the day, date and time. Reminders appear ${lead ? `${lead} minutes before and ` : ""}at the start while E.V is open.`,
+    `Only add, change or delete events when the user explicitly tells you to (\"add…\", \"schedule…\", \"remind me…\", \"move…\", \"cancel…\"). Mentioning a plan (\"I have gym at 6\", \"dentist on Tuesday\") is not a request: don't add it, don't suggest remembering it, and don't ask whether to add it — just reply naturally. Times are the user's local time unless they say otherwise; work out dates like \"tomorrow\" or \"next Tuesday\" from the current date. Confirm with the day, date and time. Before adding, if the day or AM/PM wasn't said (\"at 2\", \"Friday\" when today is Friday) — or the request was spoken (the request notes say \"Heard by voice\") and the day or time could have been misheard — ask with ask_user, offering the likely choices (e.g. \"Today, 2:00 PM\" / \"Tomorrow, 2:00 PM\"). If it's clear, just add it. Reminders appear ${lead ? `${lead} minutes before and ` : ""}at the start while E.V is open.`,
     "Next 7 days:",
     soon.length ? soon.map((o) => `- [${o.event.id}] ${describeEvent(o.event, o.at)}`).join("\n") : "(nothing scheduled)",
     // No clock here: the time comes with each request (see nowNote), so these instructions stay

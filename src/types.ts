@@ -141,6 +141,8 @@ export interface ChatMessage {
   /** What the model thought before answering (thinking switch on). */
   reasoning?: string;
   transcript?: AgentTranscript;
+  /** Why this answer was or wasn't spoken ("🔈 Spoken: you asked by voice"). */
+  voiceNote?: string;
   /** Tokens this answer used (all its steps), as the provider counted them. */
   usage?: { input: number; cached: number; output: number; steps: number };
   /** Sent to the model with this message but not shown (e.g. SUMMARY.md after /clear). */
@@ -256,6 +258,15 @@ export interface Settings {
     sttLanguage: string;
     /** Talk mode only acts on speech that starts with "Hey E.V" (or follows an answer). */
     wakeWord: boolean;
+    /** When E.V answers out loud (one rule everywhere; see services/announce.ts). */
+    replies: {
+      /** Typed requests: answer silently (text) or out loud too. */
+      typed: "silent" | "speak";
+      /** Spoken tasks while music plays ("skip", "repeat this"): a quick notch line, or out loud. */
+      tasksOverMusic: "notch" | "speak";
+      /** Reminders, approvals, failed tasks: always out loud (plus notch), or notch only. */
+      important: "speak" | "notch";
+    };
     /** Seconds E.V keeps listening after an answer without "Hey E.V" (2–15). */
     conversationSeconds: number;
     /** The conversation window became "after every answer, 8 s" (applied once to older settings). */
@@ -291,8 +302,10 @@ export interface Settings {
   customServer: { baseUrl: string };
   /** Coding agents in the terminal: Claude Code, Codex, or both (set in the start window). */
   agents: { claude: boolean; codex: boolean };
-  /** The top bar: always shown, hidden until the cursor reaches the top edge, or icons only. */
-  topBar: "always" | "auto" | "compact";
+  /** Top bar style: everything, or icons only. */
+  topBarStyle: "full" | "compact";
+  /** Top bar: always on screen, or only when the cursor reaches the top (⌥⌘B shows/hides it too). */
+  topBarShow: "always" | "hover";
   /** The start window opens at this step (0–6) next time, e.g. Permissions after moving in. */
   onboardStart?: number;
   /** This E.V took over the personal build's data (Settings → General → Move my E.V into this app). */

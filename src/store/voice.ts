@@ -14,6 +14,9 @@ interface VoiceState {
   /** The Talk chat's speaker setting from before Talk turned it on, put back when Talk ends. */
   speakerBeforeTalk: boolean | null;
   speaking: boolean;
+  /** Mute E.V (top bar): nothing is spoken; everything shows in the notch instead. */
+  muted: boolean;
+  setMuted: (muted: boolean) => void;
   listen: ListenState;
   /** Chat currently dictating via the composer microphone button. */
   dictatingChatId: string | null;
@@ -39,6 +42,8 @@ export const useVoice = create<VoiceState>()(
       speakers: {},
       speakerBeforeTalk: null,
       speaking: false,
+      muted: false,
+      setMuted: (muted) => set({ muted }),
       listen: "off",
       dictatingChatId: null,
       error: null,
@@ -68,8 +73,8 @@ export const useVoice = create<VoiceState>()(
       name: "gideon.voice",
       version: 2,
       // Speaker choices are remembered; Talk (the microphone) never comes back on by itself.
-      partialize: (s) => ({ speakers: s.speakers }),
-      migrate: () => ({ speakers: {} }),
+      partialize: (s) => ({ speakers: s.speakers, muted: s.muted }),
+      migrate: () => ({ speakers: {}, muted: false }),
     },
   ),
 );

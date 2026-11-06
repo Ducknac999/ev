@@ -6,7 +6,9 @@ vi.mock("../lib/ipc", () => ({
   passphraseCheck: async (text: string) => /copper lantern/i.test(text),
   vaultLoad: async () => "",
   vaultSave: async () => {},
+  calendarSync: async () => {},
 }));
+vi.mock("./announce", () => ({ announceImportant: async () => {} }));
 vi.mock("../audio/speech", () => ({ speechQueue: { feed: () => {}, stop: () => {} } }));
 
 const { occurrences, upcoming, checkReminders, describeEvent } = await import("./schedule");

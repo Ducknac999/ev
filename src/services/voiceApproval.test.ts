@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const spoken: string[] = [];
 const PASSPHRASE = "copper lantern 9";
 
+vi.mock("./announce", () => ({ announceImportant: async (text: string) => void spoken.push(text) }));
 vi.mock("../audio/speech", () => ({
   speechQueue: { feed: (_key: string, text: string) => spoken.push(text), stop: () => {} },
 }));

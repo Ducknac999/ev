@@ -615,3 +615,5 @@ export interface ReleaseInfo {
 export const moveFromPersonalAvailable = () => invoke<boolean>("move_from_personal_available");
 export const moveFromPersonal = () => invoke<void>("move_from_personal");
 export const updateReleases = () => invoke<ReleaseInfo[]>("update_releases");
+/** Adds/replaces or removes an E.V reminder in the Mac's Calendar (rings even when E.V is closed). */
+export const calendarSync = (request: Record<string, unknown>) => invoke<void>("calendar_sync", { request });

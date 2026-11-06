@@ -1747,12 +1747,14 @@ body { background-color: var(--bg); font-size: 13.5px; }
 .side-session.on-screen { box-shadow: inset 3px 0 0 var(--neon); }
 .side-index { font: 500 10.5px var(--font); color: var(--muted); }
 
-/* Top bar modes */
-.topbar.mode-auto { position: fixed; top: 0; left: 0; right: 0; transform: translateY(calc(-100% + 8px)); transition: transform 0.22s ease; z-index: 60; }
-.topbar.mode-auto:hover, .topbar.mode-auto:focus-within { transform: none; }
-.app:has(.topbar.mode-auto) .main-row { padding-top: 8px; }
-.topbar.mode-compact .btn-label, .topbar.mode-compact .seg-label, .topbar.mode-compact .brand { display: none; }
-.topbar.mode-compact .closed-btn { padding: 0 10px; }
+/* Top bar: style (full / compact) and showing (always / when the cursor reaches the top) */
+.topbar.show-hover { position: fixed; top: 0; left: 0; right: 0; z-index: 60; transform: translateY(-100%); transition: transform 0.22s ease; }
+.topbar.show-hover.revealed { transform: none; }
+/* Full screen: the Mac's own menu bar takes the very top; E.V's bar slides in just below it. */
+.topbar.show-hover.fullscreen { top: 38px; transform: translateY(calc(-100% - 38px)); }
+.topbar.show-hover.fullscreen.revealed { transform: none; }
+.topbar.style-compact .btn-label, .topbar.style-compact .seg-label, .topbar.style-compact .brand { display: none; }
+.topbar.style-compact .closed-btn { padding: 0 10px; }
 .tasks-menu .task-badge { max-width: none; height: 34px; }
 
 .update-busy { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(247, 185, 85, 0.08); border: 1px solid rgba(247, 185, 85, 0.25); }

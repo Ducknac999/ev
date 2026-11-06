@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>E.V puts the reminders you ask for into your Calendar, so your Mac rings them even when E.V is closed.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>E.V uses the microphone for Talk Mode voice input, transcribed locally with whisper.cpp.</string>
 </dict>

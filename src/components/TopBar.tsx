@@ -1,5 +1,5 @@
 
-import { exitTalkMode } from "../services/voiceControl";
+import { exitTalkMode, stopSpeaking } from "../services/voiceControl";
 import { openBrowserPanel } from "../services/browserPanel";
 import { activeChats, archivedChats, useChats } from "../store/chats";
 import { useVoice } from "../store/voice";
@@ -11,6 +11,8 @@ import { useLayoutPrefs } from "../store/layoutPrefs";
 import { useSettings } from "../store/settings";
 import { usePopover } from "../lib/usePopover";
 import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const LAYOUTS: { id: LayoutMode; icon: IconName; label: string; short: string }[] = [
   { id: "hud", icon: "hud", label: "Compact HUD grid", short: "Grid" },
@@ -41,6 +43,49 @@ function TaskBadge({ chat }: { chat: Chat }) {
       {chat.paused && <Icon name="pause" size={11} className="muted" />}
     </button>
   );
+}
+
+/**
+ * "Show when the cursor reaches the top": the bar slides in when the cursor nears the top of E.V
+ * and stays while the cursor is on it. In full screen the Mac shows its own menu bar at the very
+ * top, so E.V's bar sits just below it (and opens a little lower) — the two never cover each other.
+ * ⌥⌘B shows or hides it from the keyboard.
+ */
+function useTopBarReveal(enabled: boolean): { revealed: boolean; fullscreen: boolean } {
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const read = () => void win.isFullscreen().then(setFullscreen).catch(() => {});
+    read();
+    const off = win.onResized(read);
+    return () => void off.then((f) => f()).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!enabled) return;
+    const onMove = (e: MouseEvent) => {
+      const zone = fullscreen ? 90 : 10; // in full screen the Mac's menu bar owns the top ~40px
+      const barBottom = (fullscreen ? 40 : 0) + 64;
+      setHovered((open) => (open ? e.clientY < barBottom + 24 : e.clientY < zone));
+    };
+    const onLeave = () => setHovered(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey && e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setPinned((p) => !p);
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseleave", onLeave);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [enabled, fullscreen]);
+  return { revealed: enabled && (hovered || pinned), fullscreen };
 }
 
 function TasksMenu({ minimized, running }: { minimized: Chat[]; running: number }) {
@@ -81,13 +126,19 @@ export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () =>
   const talkChatId = useVoice((s) => s.talkChatId);
   const listen = useVoice((s) => s.listen);
   const speaking = useVoice((s) => s.speaking);
+  const muted = useVoice((s) => s.muted);
   const talkChat = all.find((c) => c.id === talkChatId);
-  const topBarMode = useSettings((s) => s.settings.topBar);
+  const topBarStyle = useSettings((s) => s.settings.topBarStyle);
+  const topBarShow = useSettings((s) => s.settings.topBarShow);
+  const { revealed, fullscreen } = useTopBarReveal(topBarShow === "hover");
   const minimized = chats.filter((c) => c.collapsed);
   const running = minimized.filter((c) => c.status === "streaming").length;
 
   return (
-    <header className={`topbar mode-${topBarMode}`} data-tauri-drag-region>
+    <header
+      className={`topbar style-${topBarStyle} show-${topBarShow}${revealed ? " revealed" : ""}${fullscreen ? " fullscreen" : ""}`}
+      data-tauri-drag-region
+    >
       <div className="topbar-left" data-tauri-drag-region>
       <button
         className={`icon-btn sidebar-toggle${sidebarOpen ? " on" : ""}`}
@@ -103,7 +154,7 @@ export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () =>
       </div>
 
       {/* Minimized sessions fold into one "Tasks" pill with a list, instead of a row that runs off the edge. */}
-      {minimized.length > 0 && topBarMode !== "compact" && <TasksMenu minimized={minimized} running={running} />}
+      {minimized.length > 0 && topBarStyle !== "compact" && <TasksMenu minimized={minimized} running={running} />}
       </div>
 
       {talkChat && (
@@ -150,6 +201,18 @@ export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () =>
         </button>
         <button className="btn neon" onClick={() => openPanel({ mode: "new" })} title="New session (⌘N) · Terminal (⌘T)">
           <Icon name="plus" size={14} /> <span className="btn-label">New</span>
+        </button>
+        <button
+          className={`icon-btn mute-btn${muted ? " on" : ""}`}
+          onClick={() => {
+            if (!muted) stopSpeaking();
+            useVoice.getState().setMuted(!muted);
+          }}
+          title={muted ? "E.V is muted: nothing is said out loud, everything shows in the notch. Click to unmute." : "Mute E.V: nothing is said out loud (answers show in the notch)"}
+          aria-pressed={muted}
+          aria-label={muted ? "Unmute E.V" : "Mute E.V"}
+        >
+          <Icon name={muted ? "speakerOff" : "speaker"} />
         </button>
         <button className="icon-btn" onClick={onOpenSettings} title="Settings (⌘,)">
           <Icon name="settings" />

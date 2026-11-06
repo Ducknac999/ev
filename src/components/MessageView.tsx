@@ -126,6 +126,7 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
           <ProviderDot provider={message.model.provider} />
           {modelLabel(message.model)}
           {message.keyName && <span className="msg-key"> · {message.keyName}</span>}
+          {message.voiceNote && <span className="msg-key" title="Why E.V did or didn't say this out loud (Settings → Voice → Replies)"> · {message.voiceNote}</span>}
           {message.usage && (
             <span
               className="msg-key"

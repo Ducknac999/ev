@@ -6,7 +6,8 @@ import { sendMessage, stopGeneration } from "../services/chatRunner";
 import { useChats } from "../store/chats";
 import { useDrafts, type DraftItem } from "../store/drafts";
 import { useSettings } from "../store/settings";
-import { speakerOn, useVoice } from "../store/voice";
+import { useVoice } from "../store/voice";
+import { typedReply } from "../services/announce";
 import { useSessionPanel } from "../store/sessionPanel";
 import type { Chat } from "../types";
 import { DraftAttachments } from "./Attachments";
@@ -78,7 +79,8 @@ export function Composer({ chat, focused }: { chat: Chat; focused: boolean }) {
     }
     if (!canSend || streaming) return;
     const attachments = useDrafts.getState().take(chat.id);
-    void sendMessage(chat.id, text, { speak: speakerOn(chat.id), attachments });
+    // Typed: answered in text, unless it says "…out loud" (one rule: services/announce.ts).
+    void sendMessage(chat.id, text, { speak: false, attachments, ...typedReply(text) });
     setText("");
   };
 

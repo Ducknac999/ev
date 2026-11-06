@@ -183,6 +183,33 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <>
             <VoiceEngineSettings draft={draft} update={update} />
             <div className="settings-card">
+              <h4>Replies: when E.V talks</h4>
+              <p className="settings-intro">One rule everywhere: answered the way you asked. Under each answer E.V notes why it did or didn't speak.</p>
+              <label className="field">
+                <span>When you type</span>
+                <select value={draft.voice.replies.typed} onChange={(e) => update((d) => void (d.voice.replies.typed = e.target.value as "silent" | "speak"))}>
+                  <option value="silent">Answer in text (say “…out loud” to hear one)</option>
+                  <option value="speak">Answer out loud too</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>When you speak a task while music plays (“skip”, “repeat this”)</span>
+                <select value={draft.voice.replies.tasksOverMusic} onChange={(e) => update((d) => void (d.voice.replies.tasksOverMusic = e.target.value as "notch" | "speak"))}>
+                  <option value="notch">Quick line in the notch, music keeps playing</option>
+                  <option value="speak">Pause the music and say it</option>
+                </select>
+              </label>
+              <p className="settings-intro">When you speak a question, the answer is always said out loud (music pauses for it).</p>
+              <label className="field">
+                <span>Reminders, approvals and failed tasks</span>
+                <select value={draft.voice.replies.important} onChange={(e) => update((d) => void (d.voice.replies.important = e.target.value as "speak" | "notch"))}>
+                  <option value="speak">Always out loud and in the notch</option>
+                  <option value="notch">Notch with a chime only</option>
+                </select>
+              </label>
+              <p className="settings-intro">🔇 in the top bar mutes E.V completely: nothing is said, everything shows in the notch.</p>
+            </div>
+            <div className="settings-card">
               <h4>Hey E.V · Talk mode</h4>
               <label className="check-row">
                 <input
@@ -262,11 +289,17 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {tab === "general" && (
             <div className="settings-card">
               <label className="field">
-                <span>Top bar</span>
-                <select value={draft.topBar} onChange={(e) => update((d) => void (d.topBar = e.target.value as typeof d.topBar))}>
-                  <option value="always">Always show</option>
-                  <option value="auto">Auto-hide — slides in when the cursor reaches the top</option>
-                  <option value="compact">Compact — icons only, no task list</option>
+                <span>Top bar style</span>
+                <select value={draft.topBarStyle} onChange={(e) => update((d) => void (d.topBarStyle = e.target.value as typeof d.topBarStyle))}>
+                  <option value="full">Full</option>
+                  <option value="compact">Compact — icons only</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Show the top bar</span>
+                <select value={draft.topBarShow} onChange={(e) => update((d) => void (d.topBarShow = e.target.value as typeof d.topBarShow))}>
+                  <option value="always">Always</option>
+                  <option value="hover">When the cursor reaches the top (or ⌥⌘B)</option>
                 </select>
               </label>
               <label className="field">

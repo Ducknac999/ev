@@ -55,7 +55,6 @@ export function startHoldToTalk(): void {
     // With the quick panel open, the words go into its box to check before sending.
     if (dictateIntoPanel(text)) return;
     if (sayLastIfAsked(text)) return;
-    const { speak } = useSettings.getState().settings.voice.holdToTalk;
-    void sendMessage(targetChat(), text, { speak: false, announce: speak ? "hold" : "quiet" });
+    void sendMessage(targetChat(), text, { speak: false, announce: "talk" });
   }).catch(() => {});
 }

@@ -1,7 +1,7 @@
 {
   "name": "ev",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "npm run helpers && tauri build --bundles app",
-    "helpers": "swiftc -O -target arm64-apple-macos14.0 -emit-library -module-name GideonHelpers src-tauri/helpers/capturelib.swift src-tauri/helpers/doclib.swift -o src-tauri/resources/libgideoncapture.dylib"
+    "helpers": "swiftc -O -target arm64-apple-macos14.0 -emit-library -module-name GideonHelpers src-tauri/helpers/capturelib.swift src-tauri/helpers/doclib.swift src-tauri/helpers/calendarlib.swift -o src-tauri/resources/libgideoncapture.dylib"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",

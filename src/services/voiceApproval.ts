@@ -1,5 +1,4 @@
-import { speechQueue } from "../audio/speech";
-import { uid } from "../lib/ids";
+import { announceImportant } from "./announce";
 import { passphraseCheck, passphraseStatus } from "../lib/ipc";
 import { useVoice } from "../store/voice";
 import {
@@ -29,7 +28,8 @@ export async function refreshPassphraseStatus(): Promise<boolean> {
 }
 
 function say(text: string): void {
-  speechQueue.feed(uid("approval-"), text, true);
+  // An approval E.V needs is never missed: out loud and in the notch (or notch only when muted).
+  void announceImportant(text);
 }
 
 /** The approval the user is being asked about right now, if they are talking to that chat. */

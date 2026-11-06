@@ -4,6 +4,7 @@ import { uid } from "../lib/ids";
 import { useVoice } from "../store/voice";
 import { panelShowing } from "./quickPanel";
 import { requestKind, voiceOverride } from "./requestKind";
+import { useSettings } from "../store/settings";
 
 /**
  * How E.V answers a spoken request (Hey E.V or hold to talk), like a person would:
@@ -88,26 +89,92 @@ async function speakOverMusic(text: string, playing: string[], label?: string): 
   if (wePaused) await macMedia(/toggled/i.test(paused) ? "playpause" : "play").catch(() => {});
 }
 
-export async function announce(text: string, mode: AnnounceMode, label?: string, request = "", chatId?: string): Promise<void> {
+/**
+ * THE rule for talking — every spoken reply in E.V goes through here, so it behaves the same in
+ * every chat, the quick panel, Talk mode and hold to talk:
+ * - Typed requests are answered in text (silent), unless Settings says otherwise or the request
+ *   says "…out loud".
+ * - Spoken requests are answered out loud. With music playing: a question pauses it and is said;
+ *   a task ("skip", "repeat this") gets a quick notch line and the music keeps going.
+ * - "…quietly" → notch. Mute (top bar) → nothing is spoken; everything goes to the notch.
+ * When the answer isn't on screen, its text also shows in the notch (2–7 s).
+ * The reason is written under the answer ("🔈 Spoken: you asked by voice").
+ */
+export type Why = { spoken: boolean; note: string };
+
+export async function announce(text: string, mode: AnnounceMode, label?: string, request = "", chatId?: string): Promise<Why> {
   const said = text.trim();
-  if (!said) return;
+  if (!said) return { spoken: false, note: "" };
   const override = voiceOverride(request);
+  if (useVoice.getState().muted) {
+    void notch(said);
+    last = { text: said, label, at: Date.now(), spoken: false };
+    return { spoken: false, note: "🔇 Not spoken: E.V is muted (top bar)" };
+  }
   if (mode === "quiet" || override === "quiet") {
-    if (!(await notch(said)) && mode !== "quiet") speak(said, label);
+    if (!(await notch(said))) speak(said, label);
     else last = { text: said, label, at: Date.now(), spoken: false };
-    return;
+    return { spoken: false, note: "🔇 Not spoken: you asked for it quietly" };
   }
   const playing = await audioPlaying().catch(() => [] as string[]);
   const kind = requestKind(request);
-  const toNotch = override !== "speak" && playing.length > 0 && (kind === "task" || (kind === "unclear" && isConfirmation(said)));
-  if (toNotch) {
+  const isTask = kind === "task" || (kind === "unclear" && isConfirmation(said));
+  const tasksOverMusic = useSettings.getState().settings.voice.replies.tasksOverMusic;
+  if (override !== "speak" && playing.length > 0 && isTask && tasksOverMusic === "notch") {
     if (!(await notch(said))) speak(said, label);
     else last = { text: said, label, at: Date.now(), spoken: false };
-    return;
+    return { spoken: false, note: "🔇 Shown in the notch: a task while music plays" };
   }
-  // Spoken — and when the reply isn't on screen, its text shows in the notch too.
   if (!onScreen(chatId)) void notch(said);
   await speakOverMusic(said, playing, label);
+  return { spoken: true, note: override === "speak" ? "🔈 Spoken: you asked for it out loud" : playing.length ? "🔈 Spoken (music paused): you asked by voice" : "🔈 Spoken: you asked by voice" };
+}
+
+/** Options for a typed request: silent, unless it says "…out loud" or Settings speaks typed replies. */
+export function typedReply(text: string): { announce?: AnnounceMode } {
+  const always = useSettings.getState().settings.voice.replies.typed === "speak";
+  return always || voiceOverride(text) === "speak" ? { announce: "talk" } : {};
+}
+
+/**
+ * Something you must not miss — a reminder, an approval E.V needs, a task that failed: out loud
+ * (music paused) and in the notch, however the request came in. Muted, or set to notch only:
+ * the notch with a sound.
+ */
+export async function announceImportant(text: string): Promise<void> {
+  const said = text.trim();
+  if (!said) return;
+  const toNotch = useVoice.getState().muted || useSettings.getState().settings.voice.replies.important === "notch";
+  void notch(said);
+  if (toNotch) {
+    void playChime();
+    return;
+  }
+  const playing = await audioPlaying().catch(() => [] as string[]);
+  await speakOverMusic(said, playing);
+}
+
+/** A short system sound for alerts that aren't spoken. */
+async function playChime(): Promise<void> {
+  try {
+    const ctx = new AudioContext();
+    // Two soft notes, like a calendar alert.
+    [880, 1320].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = ctx.currentTime + i * 0.18;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.4);
+    });
+    window.setTimeout(() => void ctx.close(), 1000);
+  } catch {
+    /* audio unavailable: the notch still shows it */
+  }
 }
 
 /** "Say that", "read it", "say it out loud" — on their own, right after an answer. */

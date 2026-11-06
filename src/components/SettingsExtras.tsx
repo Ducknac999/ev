@@ -911,10 +911,6 @@ export function HoldToTalkSettings({ draft, update }: { draft: Settings; update:
         </button>
         {hint && <span className="muted">{hint}</span>}
       </div>
-      <label className="check-row">
-        <input type="checkbox" checked={hold.speak} disabled={!hold.enabled} onChange={(e) => set({ speak: e.target.checked })} />
-        <span>Speak the answer out loud</span>
-      </label>
       <p className="settings-intro">
         It goes to the chat you used last (or a new one if that chat is busy). Esc while holding cancels. A single key like fn still works normally with
         other keys (fn+Delete): only holding it on its own talks. Speech is turned into text on your Mac.

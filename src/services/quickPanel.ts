@@ -10,6 +10,7 @@ import type { Chat, ChatMessage, ModelRef } from "../types";
 import { answerQuestion } from "./questions";
 import { isRunning, sendMessage, stopGeneration } from "./chatRunner";
 import { enterTalkMode, exitTalkMode } from "./voiceControl";
+import { typedReply } from "./announce";
 
 /**
  * The quick panel (src-tauri/src/panel.rs): a small window over any app showing one E.V chat.
@@ -203,7 +204,7 @@ async function send(chatId: string, text: string): Promise<void> {
   }
   const attachments = useDrafts.getState().take(chatId);
   if (!text.trim() && !attachments.length) return;
-  await sendMessage(chatId, text.trim(), { speak: false, attachments });
+  await sendMessage(chatId, text.trim(), { speak: false, attachments, ...typedReply(text) });
 }
 
 function handle(request: PanelRequest): void {

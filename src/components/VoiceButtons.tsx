@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { enterTalkMode, exitTalkMode, stopSpeaking } from "../services/voiceControl";
+import { enterTalkMode, exitTalkMode } from "../services/voiceControl";
 import { useChats } from "../store/chats";
 import { useVoice } from "../store/voice";
 import type { Chat } from "../types";
@@ -12,7 +12,6 @@ import { Icon } from "./Icon";
  */
 export function VoiceButtons({ chat }: { chat: Chat }) {
   const talkChatId = useVoice((s) => s.talkChatId);
-  const speaker = useVoice((s) => s.speakers[chat.id] === true);
   const talking = talkChatId === chat.id;
   const otherTitle = useChats((s) => (talkChatId && talkChatId !== chat.id ? s.chats.find((c) => c.id === talkChatId)?.title : undefined));
   const [asking, setAsking] = useState(false);
@@ -23,10 +22,6 @@ export function VoiceButtons({ chat }: { chat: Chat }) {
     else void enterTalkMode(chat.id);
   };
 
-  const toggleSpeaker = () => {
-    if (speaker) stopSpeaking();
-    useVoice.getState().setSpeaker(chat.id, !speaker);
-  };
 
   return (
     <>
@@ -38,15 +33,6 @@ export function VoiceButtons({ chat }: { chat: Chat }) {
           <Icon name="mic" size={11} /> Talk
         </button>
       </div>
-      <button
-        className={`icon-btn small speaker-btn${speaker ? " on" : ""}`}
-        onClick={toggleSpeaker}
-        title={speaker ? "Replies are read aloud — click to turn off" : "Replies are silent — click to read them aloud"}
-        aria-pressed={speaker}
-        aria-label="Read replies aloud"
-      >
-        <Icon name={speaker ? "speaker" : "speakerOff"} size={13} />
-      </button>
       {asking && otherTitle && <SwitchTalk from={otherTitle} to={chat.title} onCancel={() => setAsking(false)} onSwitch={() => (setAsking(false), void enterTalkMode(chat.id))} />}
     </>
   );

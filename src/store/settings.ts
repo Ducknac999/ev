@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
     sttModelPath: "~/.whisper-cpp/models/ggml-base.en.bin",
     sttLanguage: "auto",
     wakeWord: true,
+    replies: { typed: "silent", tasksOverMusic: "notch", important: "speak" },
     conversationSeconds: 8,
     followUps: "always",
     windowV2: true,
@@ -41,7 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
-  topBar: "always",
+  topBarStyle: "full",
+  topBarShow: "always",
   onboarded: false,
   screenPicture: "ask",
   defaultModel: DEEPSEEK_FLASH,
@@ -108,6 +110,12 @@ function normalize(raw: unknown): Settings {
   };
   settings.voice = { ...settings.voice, ...(input.voice ?? {}) };
   settings.voice.holdToTalk = { ...DEFAULT_SETTINGS.voice.holdToTalk, ...(input.voice?.holdToTalk ?? {}) };
+  const replies = (input.voice as { replies?: Partial<Settings["voice"]["replies"]> } | undefined)?.replies ?? {};
+  settings.voice.replies = {
+    typed: replies.typed === "speak" ? "speak" : "silent",
+    tasksOverMusic: replies.tasksOverMusic === "speak" ? "speak" : "notch",
+    important: replies.important === "notch" ? "notch" : "speak",
+  };
   if (!["asked", "never", "always"].includes(settings.voice.followUps)) settings.voice.followUps = "always";
   // Once: the conversation window after every answer (8 s), so several requests in a row need one "Hey E.V".
   if (!settings.voice.windowV2) {
@@ -127,7 +135,10 @@ function normalize(raw: unknown): Settings {
   settings.onboarded = input.onboarded === true;
   if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(6, Math.round(input.onboardStart)));
   if (input.movedFromPersonal === true) settings.movedFromPersonal = true;
-  settings.topBar = input.topBar === "auto" || input.topBar === "compact" ? input.topBar : "always";
+  // 1.0.2 had one setting ("always" | "auto" | "compact"); it splits into style and showing.
+  const old = (input as { topBar?: string }).topBar;
+  settings.topBarStyle = input.topBarStyle === "compact" || (!input.topBarStyle && old === "compact") ? "compact" : "full";
+  settings.topBarShow = input.topBarShow === "hover" || (!input.topBarShow && old === "auto") ? "hover" : "always";
   if (!["ask", "vision", "text"].includes(settings.screenPicture)) settings.screenPicture = "ask";
   // "System default" from before E.V had its own voice becomes E.V's voice.
   if (!settings.voice.ttsVoice) settings.voice.ttsVoice = DEFAULT_SETTINGS.voice.ttsVoice;

@@ -1,4 +1,5 @@
 mod onboard;
+mod calendar;
 mod migrate;
 mod agent_tools;
 mod approval_popup;
@@ -191,6 +192,7 @@ pub fn run() {
             onboard::onboard_request_microphone,
             onboard::onboard_request_automation,
             onboard::update_releases,
+            calendar::calendar_sync,
             migrate::move_from_personal_available,
             migrate::move_from_personal,
             external::open_external,
