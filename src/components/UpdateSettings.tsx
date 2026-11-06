@@ -41,18 +41,23 @@ function summary(notes: string): string[] {
 
 export function UpdateSettings() {
   const [version, setVersion] = useState("");
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [releases, setReleases] = useState<ReleaseInfo[] | null>(null);
   const [state, setState] = useState<{ checking: boolean; error: string; progress: number | null }>({ checking: false, error: "", progress: null });
   const auto = useSettings((s) => s.settings.onboarded);
 
   useEffect(() => {
     void getVersion().then(setVersion).catch(() => {});
+    // Opening the tab checks right away.
+    void checkNow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const checkNow = async () => {
     setState({ checking: true, error: "", progress: null });
     try {
       setReleases(await updateReleases());
+      setCheckedAt(new Date());
       setState({ checking: false, error: "", progress: null });
     } catch (err) {
       setState({ checking: false, error: String(err), progress: null });
@@ -89,10 +94,10 @@ export function UpdateSettings() {
       <h4>Updates</h4>
       <p className="settings-intro">
         You're on <strong>E.V {version || "…"}</strong>.{" "}
-        {releases === null
-          ? "Check to see if there's a newer version."
+        {releases === null || !version
+          ? "Checking for a newer version…"
           : ahead.length === 0
-            ? "You're up to date — there are no new updates."
+            ? `You're up to date — ${version} is the newest version${checkedAt ? ` (checked at ${checkedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})` : ""}.`
             : `You're ${ahead.length} version${ahead.length === 1 ? "" : "s"} behind. Here's what you'll get:`}
       </p>
       {ahead.length > 0 && (

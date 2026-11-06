@@ -154,24 +154,52 @@ fn microphone_status() -> String {
     .into()
 }
 
+/// Set once macOS says yes to the microphone, or once real sound has come through it (a denied
+/// microphone only ever delivers silence). Either way the permission is there.
+static MIC_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[tauri::command]
 pub fn onboard_permissions() -> MorePermissions {
-    MorePermissions { microphone: microphone_status() }
+    let status = microphone_status();
+    let microphone = if status == "granted" || MIC_OK.load(std::sync::atomic::Ordering::Relaxed) { "granted".to_string() } else { status };
+    MorePermissions { microphone }
 }
 
-/// Asks for the microphone: macOS shows its prompt the first time anything listens.
+/// Asks for the microphone with macOS's own prompt, and listens (for up to 30 s) so the answer
+/// shows the moment real sound comes in, even if macOS's status is slow to catch up.
 #[tauri::command]
 pub fn onboard_request_microphone() {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject, Bool};
+    unsafe { libc::dlopen(c"/System/Library/Frameworks/AVFoundation.framework/AVFoundation".as_ptr(), libc::RTLD_LAZY) };
+    if let (Some(class), Some(ns_string)) = (AnyClass::get(c"AVCaptureDevice"), AnyClass::get(c"NSString")) {
+        let media: *mut AnyObject = unsafe { msg_send![ns_string, stringWithUTF8String: c"soun".as_ptr()] };
+        let done = block2::RcBlock::new(|granted: Bool| {
+            if granted.as_bool() {
+                MIC_OK.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        let _: () = unsafe { msg_send![class, requestAccessForMediaType: media, completionHandler: &*done] };
+    }
     std::thread::spawn(|| {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let Some(device) = cpal::default_host().default_input_device() else { return };
         let Ok(config) = device.default_input_config() else { return };
-        if let Ok(stream) = device.build_input_stream(&config.into(), |_: &[f32], _: &_| {}, |_| {}, None) {
+        let heard = |data: &[f32], _: &cpal::InputCallbackInfo| {
+            if data.iter().any(|s| s.abs() > 1e-4) {
+                MIC_OK.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        };
+        if let Ok(stream) = device.build_input_stream(&config.into(), heard, |_| {}, None) {
             let _ = stream.play();
-            std::thread::sleep(Duration::from_millis(800));
+            for _ in 0..60 {
+                if MIC_OK.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
         }
     });
-    let _ = Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone").spawn();
 }
 
 /// Asks to control a browser (macOS "Automation"): the prompt appears the first time E.V talks to it.

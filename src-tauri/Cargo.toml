@@ -1,6 +1,6 @@
 [package]
 name = "ev"
-version = "1.0.0"
+version = "1.0.1"
 description = "Multi-chat desktop workspace"
 edition = "2021"
 
@@ -33,6 +33,7 @@ sonora = "0.2"
 cpal = "0.15"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+block2 = "0.6"
 
 [profile.release]
 codegen-units = 1

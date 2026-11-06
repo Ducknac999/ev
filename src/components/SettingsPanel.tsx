@@ -25,8 +25,9 @@ import {
   TerminalSettings,
 } from "./SettingsExtras";
 
-type Tab = "providers" | "claude" | "approvals" | "connections" | "activity" | "learned" | "terminal" | "skills" | "memory" | "schedule" | "voice" | "general";
+type Tab = "providers" | "claude" | "approvals" | "connections" | "activity" | "learned" | "terminal" | "skills" | "memory" | "schedule" | "voice" | "general" | "updates";
 const TABS: { id: Tab; label: string }[] = [
+  { id: "updates", label: "Updates" },
   { id: "providers", label: "API keys" },
   { id: "claude", label: "Claude Code" },
   { id: "approvals", label: "Approvals" },
@@ -324,7 +325,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {tab === "general" && <SpendingSettings draft={draft} update={update} />}
-          {tab === "general" && <UpdateSettings />}
+          {tab === "updates" && <UpdateSettings />}
           {tab === "general" && (
             <div className="settings-card">
               <h4>Setup</h4>

@@ -11,7 +11,7 @@ import { Icon, type IconName } from "./Icon";
 const ALL_KINDS: { kind: SessionKind; label: string; icon: IconName; hint: string }[] = [
   { kind: "claude", label: "Claude Code", icon: "spark", hint: "Real Claude Code in a project folder" },
   { kind: "codex", label: "Codex", icon: "spark", hint: "OpenAI's Codex in a project folder" },
-  { kind: "ai", label: "AI chat", icon: "wave", hint: "Chat that can work on your Mac with approvals" },
+  { kind: "ai", label: "E.V Chat", icon: "wave", hint: "Chat that can work on your Mac with approvals" },
   { kind: "shell", label: "Terminal", icon: "terminal", hint: "Your normal Mac terminal" },
   { kind: "command", label: "Command", icon: "play", hint: "Run one command in its own tab" },
 ];
@@ -204,7 +204,7 @@ export function SessionPanel() {
 
             <button className="btn primary start-btn" disabled={!canStart} onClick={() => start()}>
               <Icon name="plus" size={13} />{" "}
-              {kind === "claude" ? "New Claude Code session" : kind === "codex" ? "New Codex session" : kind === "ai" ? "New AI chat" : kind === "shell" ? "Open terminal" : "Run command"}
+              {kind === "claude" ? "New Claude Code session" : kind === "codex" ? "New Codex session" : kind === "ai" ? "New E.V Chat" : kind === "shell" ? "Open terminal" : "Run command"}
               {cwd && needsFolder ? ` in ${folderName(cwd)}` : ""}
             </button>
 

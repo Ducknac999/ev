@@ -108,7 +108,7 @@ export function SkillsSettings() {
         <p className="settings-intro">
           Claude Code and every AI in E.V (Gemini, Groq, and any you add later) follow the same file:
           <code> ~/.claude/CLAUDE.md</code>. Edit it once (or tell any AI “save rule …”) and every session picks it up.
-          Gemini chats also load the project’s <code>CLAUDE.md</code> and, on a fresh or cleared context,{" "}
+          E.V Chats also load the project’s <code>CLAUDE.md</code> and, on a fresh or cleared context,{" "}
           <code>SUMMARY.md</code>.
         </p>
         <div className={`status-line ${context.globalRules ? "ok" : "bad"}`}>

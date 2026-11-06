@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { lastPreview, relativeTime } from "../lib/chatStatus";
 import { useNow } from "../lib/useNow";
 import { activeChats, archivedChats, FOCUS_LIMIT, useChats } from "../store/chats";
@@ -5,7 +6,8 @@ import { useSessionPanel } from "../store/sessionPanel";
 import type { Chat } from "../types";
 import { ChatControls } from "./ChatControls";
 import { ChatPane, type PaneVariant } from "./ChatPane";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
+import { useSettings } from "../store/settings";
 import { SessionGlyph, sessionLabel, SessionStatusPill, useSessionState } from "./SessionStatus";
 import { TerminalPane } from "./TerminalPane";
 import { BrowserPane } from "./BrowserPane";
@@ -18,31 +20,57 @@ function SessionPane(props: { chat: Chat; index: number; focused: boolean; varia
 }
 
 function EmptyWorkspace({ onOpenClosed }: { onOpenClosed: () => void }) {
-  const closedCount = useChats((s) => archivedChats(s.chats).length);
+  const allChats = useChats((s) => s.chats);
+  const closed = useMemo(() => archivedChats(allChats), [allChats]);
+  const agents = useSettings((s) => s.settings.agents);
   const open = useSessionPanel((s) => s.open);
+  const restore = useChats((s) => s.restoreChat);
+  const cards: { kind: "ai" | "claude" | "codex" | "shell"; title: string; about: string; icon: IconName }[] = [
+    { kind: "ai", title: "E.V Chat", about: "Ask anything, or give E.V a task on your Mac. It asks before anything risky.", icon: "wave" },
+    ...(agents.claude ? [{ kind: "claude" as const, title: "Claude Code", about: "Anthropic's coding agent, working in a project folder.", icon: "spark" as IconName }] : []),
+    ...(agents.codex ? [{ kind: "codex" as const, title: "Codex", about: "OpenAI's coding agent, working in a project folder.", icon: "spark" as IconName }] : []),
+    { kind: "shell", title: "Terminal", about: "Your normal Mac terminal, kept running in the background.", icon: "terminal" },
+  ];
   return (
-    <div className="workspace-empty">
-      <div className="empty-reticle" aria-hidden="true" />
-      <div className="hud-label">No active sessions</div>
-      <div className="workspace-empty-actions">
-        <button className="btn neon" onClick={() => open({ mode: "new", kind: "claude" })}>
-          <Icon name="spark" size={14} /> Claude Code
-        </button>
-        <button className="btn neon" onClick={() => open({ mode: "new", kind: "ai" })}>
-          <Icon name="wave" size={14} /> Gemini chat
-        </button>
-        <button className="btn" onClick={() => open({ mode: "new", kind: "shell" })}>
-          <Icon name="terminal" size={14} /> Terminal
-        </button>
-        <button className="btn" onClick={() => open({ mode: "new" })}>
-          <Icon name="plus" size={14} /> New session <kbd>⌘N</kbd>
-        </button>
-        {closedCount > 0 && (
-          <button className="btn" onClick={onOpenClosed}>
-            <Icon name="archive" size={13} /> Closed chats ({closedCount})
+    <div className="home">
+      <header className="home-head">
+        <h1>What do you want to do?</h1>
+        <p>Start a chat, a coding agent or a terminal. Everything stays on this Mac.</p>
+      </header>
+      <div className="home-grid">
+        {cards.map((c) => (
+          <button key={c.kind} className="home-card" onClick={() => open({ mode: "new", kind: c.kind })}>
+            <span className="home-icon">
+              <Icon name={c.icon} size={22} />
+            </span>
+            <h3>{c.title}</h3>
+            <p>{c.about}</p>
           </button>
-        )}
+        ))}
+        <button className={`home-card light${cards.length % 3 === 1 ? " wide" : ""}`} onClick={() => open({ mode: "new" })}>
+          <span className="home-cta">
+            New session <span className="home-cta-arrow">↗</span>
+          </span>
+          <p>Pick any kind of session and a project folder. Shortcut: ⌘N</p>
+        </button>
       </div>
+      {closed.length > 0 && (
+        <section className="home-recent">
+          <h4>Recently closed</h4>
+          <div className="home-recent-row">
+            {closed.slice(0, 8).map((c) => (
+              <button key={c.id} className="home-chip" onClick={() => restore(c.id)}>
+                {c.title} <span className="muted">{relativeTime(c.updatedAt, Date.now())}</span>
+              </button>
+            ))}
+            {closed.length > 8 && (
+              <button className="home-chip" onClick={onOpenClosed}>
+                All {closed.length} closed
+              </button>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
