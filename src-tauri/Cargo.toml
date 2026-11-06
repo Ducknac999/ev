@@ -1,6 +1,6 @@
 [package]
 name = "ev"
-version = "1.0.1"
+version = "1.0.2"
 description = "Multi-chat desktop workspace"
 edition = "2021"
 

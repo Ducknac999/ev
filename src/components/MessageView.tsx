@@ -10,7 +10,7 @@ import { shortCount } from "../store/usage";
 import { sendMessage } from "../services/chatRunner";
 import { useChats } from "../store/chats";
 import { useVault } from "../store/vault";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, MessageBlock, ToolStep } from "../types";
 import { MessageAttachments } from "./Attachments";
 import { ToolCard } from "./ToolCard";
 import { CodeBlock } from "./CodeBlock";
@@ -143,15 +143,7 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
           <div className="msg-thinking-body">{message.reasoning}</div>
         </details>
       )}
-      {message.blocks
-        ? message.blocks.map((block, i) =>
-            block.type === "text" ? (
-              block.text.trim() ? <Markdown key={i} text={block.text} /> : null
-            ) : (
-              <ToolCard key={block.step.id} step={block.step} />
-            ),
-          )
-        : message.content && <Markdown text={message.content} />}
+      {message.blocks ? <Blocks blocks={message.blocks} /> : message.content && <Markdown text={message.content} />}
       {message.checking && (
         <div className="fact-check checking" role="status">
           <span className="spinner small" /> Checking facts against sources…
@@ -184,3 +176,60 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
     </div>
   );
 });
+
+
+/** A step that needs nothing from you and shows nothing special can be folded with its neighbours. */
+function foldable(step: ToolStep): boolean {
+  return ["done", "error", "denied", "running", "queued"].includes(step.status) && !step.question && !step.plan && !step.undo && !step.graph && !step.helpers;
+}
+
+/**
+ * Three or more plain steps in a row fold into one line ("✓ 10 steps ▸"); while E.V works the line
+ * says what it's doing. Steps waiting for you (approvals, questions, plans) always show in full.
+ */
+function Blocks({ blocks }: { blocks: MessageBlock[] }) {
+  const out: React.ReactNode[] = [];
+  let run: ToolStep[] = [];
+  const flush = (key: string) => {
+    if (run.length >= 3) out.push(<StepGroup key={`g-${key}`} steps={run} />);
+    else run.forEach((step) => out.push(<ToolCard key={step.id} step={step} />));
+    run = [];
+  };
+  blocks.forEach((block, i) => {
+    if (block.type === "tool" && foldable(block.step)) {
+      run.push(block.step);
+      return;
+    }
+    flush(String(i));
+    if (block.type === "text") {
+      if (block.text.trim()) out.push(<Markdown key={i} text={block.text} />);
+    } else out.push(<ToolCard key={block.step.id} step={block.step} />);
+  });
+  flush("end");
+  return <>{out}</>;
+}
+
+function StepGroup({ steps }: { steps: ToolStep[] }) {
+  const [open, setOpen] = useState(false);
+  const working = steps.find((s) => s.status === "running" || s.status === "queued");
+  const failed = steps.filter((s) => s.status === "error" || s.status === "denied").length;
+  return (
+    <div className={`step-group${open ? " open" : ""}`}>
+      <button className="step-group-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        {working ? <span className="spinner small" /> : <Icon name="check" size={12} />}
+        <span className="step-group-text">
+          {working ? working.title : `${steps.length} steps`}
+          {failed > 0 && <span className="step-group-failed"> · {failed} didn't work</span>}
+        </span>
+        <Icon name={open ? "chevronUp" : "chevron"} size={11} />
+      </button>
+      {open && (
+        <div className="step-group-body">
+          {steps.map((step) => (
+            <ToolCard key={step.id} step={step} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

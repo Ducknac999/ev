@@ -41,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
+  topBar: "always",
   onboarded: false,
   screenPicture: "ask",
   defaultModel: DEEPSEEK_FLASH,
@@ -124,6 +125,9 @@ function normalize(raw: unknown): Settings {
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };
   settings.agents = { claude: input.agents?.claude !== false, codex: input.agents?.codex === true };
   settings.onboarded = input.onboarded === true;
+  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(6, Math.round(input.onboardStart)));
+  if (input.movedFromPersonal === true) settings.movedFromPersonal = true;
+  settings.topBar = input.topBar === "auto" || input.topBar === "compact" ? input.topBar : "always";
   if (!["ask", "vision", "text"].includes(settings.screenPicture)) settings.screenPicture = "ask";
   // "System default" from before E.V had its own voice becomes E.V's voice.
   if (!settings.voice.ttsVoice) settings.voice.ttsVoice = DEFAULT_SETTINGS.voice.ttsVoice;

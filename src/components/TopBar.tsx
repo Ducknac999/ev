@@ -8,11 +8,14 @@ import { Icon, type IconName } from "./Icon";
 import { SessionGlyph, sessionLabel } from "./SessionStatus";
 import { useSessionPanel } from "../store/sessionPanel";
 import { useLayoutPrefs } from "../store/layoutPrefs";
+import { useSettings } from "../store/settings";
+import { usePopover } from "../lib/usePopover";
+import { createPortal } from "react-dom";
 
 const LAYOUTS: { id: LayoutMode; icon: IconName; label: string; short: string }[] = [
   { id: "hud", icon: "hud", label: "Compact HUD grid", short: "Grid" },
   { id: "focus", icon: "focus", label: "Focus / split screen (up to 4)", short: "Focus" },
-  { id: "tray", icon: "rows", label: "Tray list — command center", short: "Tray" },
+  { id: "tray", icon: "rows", label: "List of every session", short: "List" },
 ];
 
 function TaskBadge({ chat }: { chat: Chat }) {
@@ -40,6 +43,32 @@ function TaskBadge({ chat }: { chat: Chat }) {
   );
 }
 
+function TasksMenu({ minimized, running }: { minimized: Chat[]; running: number }) {
+  const { open, setOpen, pos, triggerRef, menuRef } = usePopover(280, 420);
+  return (
+    <>
+      <button ref={triggerRef} className={`btn tasks-pill${running ? " running" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} title="Minimized sessions">
+        {running > 0 ? <span className="spinner small" /> : <Icon name="rows" size={13} />}
+        <span>
+          Tasks · {minimized.length}
+          {running > 0 ? ` (${running} running)` : ""}
+        </span>
+        <Icon name={open ? "chevronUp" : "chevron"} size={11} />
+      </button>
+      {open &&
+        pos &&
+        createPortal(
+          <div ref={menuRef} className="pane-menu tasks-menu" style={{ left: pos.left, top: pos.top, maxHeight: pos.maxHeight }} onClick={() => setOpen(false)}>
+            {minimized.map((chat) => (
+              <TaskBadge key={chat.id} chat={chat} />
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () => void; onOpenClosed: () => void }) {
   const all = useChats((s) => s.chats);
   const chats = activeChats(all);
@@ -53,11 +82,12 @@ export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () =>
   const listen = useVoice((s) => s.listen);
   const speaking = useVoice((s) => s.speaking);
   const talkChat = all.find((c) => c.id === talkChatId);
+  const topBarMode = useSettings((s) => s.settings.topBar);
   const minimized = chats.filter((c) => c.collapsed);
   const running = minimized.filter((c) => c.status === "streaming").length;
 
   return (
-    <header className="topbar" data-tauri-drag-region>
+    <header className={`topbar mode-${topBarMode}`} data-tauri-drag-region>
       <div className="topbar-left" data-tauri-drag-region>
       <button
         className={`icon-btn sidebar-toggle${sidebarOpen ? " on" : ""}`}
@@ -72,16 +102,8 @@ export function TopBar({ onOpenSettings, onOpenClosed }: { onOpenSettings: () =>
         E.V
       </div>
 
-      <div className="task-tray" data-tauri-drag-region aria-label="Active tasks">
-        {minimized.length > 0 && (
-          <span className="task-tray-label" data-tauri-drag-region>
-            Tasks{running > 0 ? ` · ${running} running` : ""}
-          </span>
-        )}
-        {minimized.map((chat) => (
-          <TaskBadge key={chat.id} chat={chat} />
-        ))}
-      </div>
+      {/* Minimized sessions fold into one "Tasks" pill with a list, instead of a row that runs off the edge. */}
+      {minimized.length > 0 && topBarMode !== "compact" && <TasksMenu minimized={minimized} running={running} />}
       </div>
 
       {talkChat && (

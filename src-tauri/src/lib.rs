@@ -1,4 +1,5 @@
 mod onboard;
+mod migrate;
 mod agent_tools;
 mod approval_popup;
 mod attachments;
@@ -113,6 +114,7 @@ pub fn print_memory_and_exit() -> bool {
 
 pub fn run() {
     shell_env::hydrate_path();
+    migrate::run_if_requested();
     let ptys = Arc::new(pty::PtyRegistry::default());
     let ptys_on_exit = ptys.clone();
 
@@ -189,6 +191,8 @@ pub fn run() {
             onboard::onboard_request_microphone,
             onboard::onboard_request_automation,
             onboard::update_releases,
+            migrate::move_from_personal_available,
+            migrate::move_from_personal,
             external::open_external,
             mcp::connections_catalog,
             mcp::connection_start,

@@ -16,10 +16,11 @@ import { useDropTarget } from "../store/dropTarget";
 import { useSessionPanel } from "../store/sessionPanel";
 import { useVoice } from "../store/voice";
 import type { Chat } from "../types";
-import { ChatControls } from "./ChatControls";
+import { PaneMenu } from "./PaneMenu";
+import { closeChat, requestDelete, toggleCollapsed } from "../services/chatLifecycle";
 import { Icon } from "./Icon";
 import { SessionStatusPill } from "./SessionStatus";
-import { ClaudeUsageRow } from "./Usage";
+import { ClaudeUsageRing } from "./Usage";
 import type { PaneVariant } from "./ChatPane";
 
 const KIND_LABEL: Record<Exclude<Chat["kind"], "ai">, string> = {
@@ -37,7 +38,6 @@ function shortPath(path: string | undefined): string {
 
 export function TerminalPane({
   chat,
-  index,
   focused,
   variant,
 }: {
@@ -135,7 +135,9 @@ export function TerminalPane({
       )}
       <header className="pane-head">
         <div className="pane-row">
-          <span className="pane-index">{String(index + 1).padStart(2, "0")}</span>
+          <span className={`kind-dot kind-${kind}`} title={KIND_LABEL[kind]}>
+            <Icon name={kind === "claude" || kind === "codex" ? "spark" : "terminal"} size={13} />
+          </span>
           {editing ? (
             <input
               className="pane-title-input"
@@ -163,69 +165,41 @@ export function TerminalPane({
               {chat.title}
             </h2>
           )}
-          <SessionStatusPill chat={chat} />
-          <ChatControls chat={chat} focusAction={variant === "card" ? "expand" : "dock"} />
-        </div>
-        <div className="pane-row pane-sub">
-          <span className={`kind-badge kind-${kind}`}>
-            <Icon name={kind === "claude" ? "spark" : "terminal"} size={11} /> {KIND_LABEL[kind]}
-          </span>
           <span className="folder-chip" title={chat.cwd ?? "~"}>
             <Icon name="folder" size={11} /> {shortPath(chat.cwd)}
           </span>
-          {kind === "command" && chat.command && (
+          {kind === "claude" && !chat.collapsed && <ClaudeUsageRing />}
+          <SessionStatusPill chat={chat} />
+          {exited && (
+            <button className="btn small" title="Start the session again" onClick={() => restartTerminal(chat)}>
+              <Icon name="refresh" size={12} /> {runtime?.notStarted ? "Run" : "Restart"}
+            </button>
+          )}
+          <PaneMenu
+            items={[
+              { label: "Find in output", icon: "search", hint: "⌘F", onSelect: () => setSearchOpen(true) },
+              { label: dictating ? "Stop dictation" : "Dictate into it", icon: "mic", disabled: transcribing || (dictatingChatId !== null && !dictating), onSelect: () => void toggleDictation() },
+              ...(kind === "claude"
+                ? [{ label: "Past sessions in this folder", icon: "history" as const, onSelect: () => useSessionPanel.getState().open({ mode: "resume", cwd: chat.cwd, kind: "claude" }) }]
+                : []),
+              ...(!exited ? [{ label: "Interrupt (Ctrl-C)", icon: "stop" as const, onSelect: () => void ptySignal(chat.id, "INT").catch(() => writeToTerminal(chat.id, "\x03")) }] : []),
+              { label: "Copy everything", icon: "copy", divider: true, onSelect: () => void copyLog() },
+              { label: "Save the log…", icon: "download", onSelect: () => void saveLog() },
+              { label: "Rename", icon: "edit", onSelect: () => (setDraftTitle(chat.title), setEditing(true)) },
+              variant === "card"
+                ? { label: "Open big (focus)", icon: "expand" as const, divider: true, onSelect: () => useChats.getState().openInFocus(chat.id) }
+                : { label: "Back to the list", icon: "dock" as const, divider: true, onSelect: () => useChats.getState().removeFromFocus(chat.id) },
+              { label: chat.collapsed ? "Expand" : "Minimize", icon: "minimize", hint: "⌘⇧M", onSelect: () => toggleCollapsed(chat.id) },
+              { label: "Close", icon: "close", hint: "⌘⇧W", onSelect: () => closeChat(chat.id) },
+              { label: "Delete", icon: "trash", hint: "⌘⇧⌫", danger: true, onSelect: () => requestDelete(chat.id) },
+            ]}
+          />
+        </div>
+        {kind === "command" && chat.command && !chat.collapsed && (
+          <div className="pane-row pane-sub">
             <code className="pane-command" title={chat.command}>
               {chat.command}
             </code>
-          )}
-          <span className="term-stats" title="Foreground program · CPU · memory of the whole session">
-            {runtime?.foreground && <span className="term-proc">{runtime.foreground}</span>}
-            {runtime?.running && (
-              <span>
-                {runtime.cpu.toFixed(0)}% · {runtime.memoryMb >= 1024 ? `${(runtime.memoryMb / 1024).toFixed(1)} GB` : `${Math.round(runtime.memoryMb)} MB`}
-              </span>
-            )}
-          </span>
-        </div>
-        {!chat.collapsed && (
-          <div className="pane-row pane-usage term-toolbar">
-            {kind === "claude" ? <ClaudeUsageRow /> : <span className="usage-text muted">{runtime?.appTitle || " "}</span>}
-            <span className="pane-spacer" />
-            {kind === "claude" && (
-              <button
-                className="ctl wide"
-                title="Past Claude Code sessions in this folder"
-                onClick={() => useSessionPanel.getState().open({ mode: "resume", cwd: chat.cwd, kind: "claude" })}
-              >
-                <Icon name="history" size={12} /> Sessions
-              </button>
-            )}
-            <button className="ctl" title="Search output (⌘F)" aria-pressed={searchOpen} onClick={() => setSearchOpen((o) => !o)}>
-              <Icon name="search" size={12} />
-            </button>
-            <button className="ctl" title="Copy the whole session as text" onClick={() => void copyLog()}>
-              <Icon name="copy" size={12} />
-            </button>
-            <button className="ctl" title="Save session log…" onClick={() => void saveLog()}>
-              <Icon name="download" size={12} />
-            </button>
-            <button
-              className={`ctl${dictating ? " recording" : ""}`}
-              title={dictating ? "Stop dictation and type it" : "Dictate into the terminal"}
-              disabled={transcribing || (dictatingChatId !== null && !dictating)}
-              onClick={() => void toggleDictation()}
-            >
-              {transcribing ? <span className="spinner small" /> : <Icon name="mic" size={12} />}
-            </button>
-            {exited ? (
-              <button className="ctl wide" title="Start the session again" onClick={() => restartTerminal(chat)}>
-                <Icon name="refresh" size={12} /> {runtime?.notStarted ? "Run" : "Restart"}
-              </button>
-            ) : (
-              <button className="ctl" title="Interrupt (Ctrl-C)" onClick={() => void ptySignal(chat.id, "INT").catch(() => writeToTerminal(chat.id, "\x03"))}>
-                <Icon name="stop" size={12} />
-              </button>
-            )}
           </div>
         )}
       </header>

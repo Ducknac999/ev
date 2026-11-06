@@ -1672,3 +1672,91 @@ body { background-color: var(--bg); font-size: 13.5px; }
 .ob-provider, .ob-perm, .ob-model { border-radius: 14px; }
 .ob-perm.done .ob-perm-mark { color: #fff; }
 .ob-start { height: 44px; padding: 0 30px; font-size: 15px; }
+
+/* ── 1.0.2: calmer panels in every layout ─────────────────────────────────── */
+/* Header: one row (title · status · ⋯), then one slim row of chat controls. */
+.pane-head { gap: 8px; padding: 12px 12px 10px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.pane-row { gap: 8px; }
+.pane-title { font: 600 14px var(--font); }
+.pane-sub { gap: 6px; }
+.pane-sub .folder-chip, .pane-sub .model-chip, .pane-sub .think-chip { height: 28px; border-radius: 999px; }
+.pane-menu-btn { width: 30px; height: 30px; color: var(--text-2); }
+.pane-menu-btn.active { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.pane-index, .rename-btn { display: none; }
+.kind-dot { width: 26px; height: 26px; flex: none; border-radius: 9px; display: grid; place-items: center; color: #cfe0ff; background: rgba(120, 170, 255, 0.16); }
+.kind-dot.kind-shell, .kind-dot.kind-command { color: var(--text-2); background: rgba(255, 255, 255, 0.07); }
+.usage-ring { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-2); flex: none; }
+.pane-empty-title { font: 600 15px var(--font); color: var(--text); }
+.pane-empty-sub { font-size: 12px; color: var(--muted); }
+.pane-empty-sub::after { content: none; }
+
+/* The ⋯ menu and the Tasks list */
+.pane-menu {
+  position: fixed; z-index: 400; width: 240px; overflow-y: auto; padding: 6px;
+  background: rgba(14, 19, 34, 0.97); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.pane-menu-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 9px; background: none; color: var(--text); cursor: pointer; font-size: 13px; text-align: left; }
+.pane-menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+.pane-menu-item:disabled { opacity: 0.4; cursor: default; }
+.pane-menu-item.danger { color: var(--crimson); }
+.pane-menu-item kbd { font-size: 10px; opacity: 0.6; }
+.pane-menu-line { height: 1px; margin: 5px 6px; background: rgba(255, 255, 255, 0.07); }
+.tasks-menu { width: 280px; display: flex; flex-direction: column; gap: 4px; }
+.tasks-menu .task-badge { width: 100%; justify-content: flex-start; border-radius: 10px; }
+.tasks-pill { max-width: 220px; }
+.tasks-pill.running { border-color: rgba(var(--neon-rgb), 0.4); }
+
+/* Messages: your words in a bubble, E.V's answer as plain text on the panel. */
+.msg-assistant { background: none; border: 0; padding: 4px 2px; }
+.msg-meta { font-size: 11px; color: var(--muted); }
+.message-list, .msg-list { gap: 14px; }
+
+/* Folded steps */
+.step-group { margin: 6px 0; border-radius: 12px; background: rgba(255, 255, 255, 0.035); border: 1px solid rgba(255, 255, 255, 0.06); }
+.step-group-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 0; background: none; color: var(--text-2); cursor: pointer; font-size: 12.5px; text-align: left; }
+.step-group-head:hover { color: var(--text); }
+.step-group-head > svg:first-child { color: var(--green); }
+.step-group-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-group-failed { color: var(--amber); }
+.step-group-body { padding: 0 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+.tool-card { border-radius: 10px; }
+.tool-result-toggle.inline { width: 22px; padding: 0; justify-content: center; }
+
+/* Claude / Codex / Terminal: navy like everything else, with room around the text. */
+.terminal-pane { background: linear-gradient(180deg, rgba(14, 19, 36, 0.9), rgba(8, 11, 22, 0.94)); }
+.terminal-body { padding: 10px 14px 12px; background: transparent; }
+.terminal-body .xterm, .terminal-body .xterm-viewport, .terminal-body .xterm-screen { background: transparent !important; }
+.term-search { border-radius: 12px; margin: 0 12px 8px; }
+
+/* Layouts */
+.hud-grid { gap: 16px; }
+.workspace-scroll { padding: 16px; }
+.focus-layout { padding: 16px; gap: 16px; }
+.focus-placeholder { border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 22px; color: var(--muted); font-size: 13px; }
+.focus-hint { font-size: 12px; color: var(--muted); }
+.tray { border-radius: 18px; overflow: hidden; background: var(--card); border: 1px solid rgba(255, 255, 255, 0.07); }
+.tray-row { padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.tray-header { font-size: 11.5px; color: var(--muted); }
+
+/* Sidebar: the one session list; sessions showing in Focus get a soft blue edge. */
+.sidebar { background: rgba(6, 9, 20, 0.55); border-right: 1px solid rgba(255, 255, 255, 0.05); }
+.side-session { border-radius: 12px; }
+.side-session.active { background: rgba(var(--neon-rgb), 0.12); }
+.side-session.on-screen { box-shadow: inset 3px 0 0 var(--neon); }
+.side-index { font: 500 10.5px var(--font); color: var(--muted); }
+
+/* Top bar modes */
+.topbar.mode-auto { position: fixed; top: 0; left: 0; right: 0; transform: translateY(calc(-100% + 8px)); transition: transform 0.22s ease; z-index: 60; }
+.topbar.mode-auto:hover, .topbar.mode-auto:focus-within { transform: none; }
+.app:has(.topbar.mode-auto) .main-row { padding-top: 8px; }
+.topbar.mode-compact .btn-label, .topbar.mode-compact .seg-label, .topbar.mode-compact .brand { display: none; }
+.topbar.mode-compact .closed-btn { padding: 0 10px; }
+.tasks-menu .task-badge { max-width: none; height: 34px; }
+
+.update-busy { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: rgba(247, 185, 85, 0.08); border: 1px solid rgba(247, 185, 85, 0.25); }
+.update-busy p { margin: 0 0 10px; color: var(--text-2); font-size: 12.5px; }
+.settings-card dl.shortcut-list > div { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.settings-card dl.shortcut-list dt { color: var(--text-2); }
+.settings-card dl.shortcut-list dd { margin: 0; text-align: right; }

@@ -4,6 +4,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useEffect, useState } from "react";
 import { updateReleases, type ReleaseInfo } from "../lib/ipc";
 import { useSettings } from "../store/settings";
+import { useChats } from "../store/chats";
 
 /**
  * Settings → General → Updates. Reads the public repo's releases: up to date, or how many versions
@@ -64,7 +65,26 @@ export function UpdateSettings() {
     }
   };
 
+  const busy = useChats((s) => s.chats.filter((c) => c.kind === "ai" && c.status === "streaming").length);
+  const [waiting, setWaiting] = useState(false);
+  const [askBusy, setAskBusy] = useState(false);
+
+  // "Update when they finish": waits until no chat is answering, then installs.
+  useEffect(() => {
+    if (waiting && busy === 0) {
+      setWaiting(false);
+      void install();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting, busy]);
+
+  const startUpdate = () => {
+    if (busy > 0) setAskBusy(true);
+    else void install();
+  };
+
   const install = async () => {
+    setAskBusy(false);
     setState({ checking: false, error: "", progress: 0 });
     try {
       const update: Update | null = await check();
@@ -127,11 +147,31 @@ export function UpdateSettings() {
           {state.checking ? "Checking…" : "Check for updates"}
         </button>
         {ahead.length > 0 && (
-          <button className="btn neon" disabled={state.progress !== null} onClick={() => void install()}>
+          <button className="btn neon" disabled={state.progress !== null || waiting} onClick={startUpdate}>
             {state.progress === null ? `Update to ${ahead[0].version}` : state.progress >= 1 ? "Restarting…" : `Downloading… ${Math.round(state.progress * 100)}%`}
           </button>
         )}
       </div>
+      {askBusy && (
+        <div className="update-busy">
+          <p>
+            {busy} chat{busy === 1 ? " is" : "s are"} still answering. E.V restarts to update, which would stop {busy === 1 ? "it" : "them"}. Claude and
+            terminal sessions keep running either way.
+          </p>
+          <div className="update-actions">
+            <button className="btn neon" onClick={() => (setAskBusy(false), setWaiting(true))}>
+              Update when {busy === 1 ? "it finishes" : "they finish"}
+            </button>
+            <button className="btn" onClick={() => void install()}>
+              Update now
+            </button>
+            <button className="btn ghost" onClick={() => setAskBusy(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {waiting && <p className="settings-intro">Waiting for {busy} chat{busy === 1 ? "" : "s"} to finish, then updating…</p>}
       {state.error && <p className="ob-error">{state.error}</p>}
       {auto && <p className="settings-intro">Your settings, keys and chats stay when E.V updates.</p>}
     </div>

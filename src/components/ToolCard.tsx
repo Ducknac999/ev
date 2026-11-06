@@ -538,8 +538,8 @@ export const ToolCard = memo(function ToolCard({ step }: { step: ToolStep }) {
           {step.alwaysApproved && <span className="tool-voice">Always approved</span>}
           {step.status !== "done" && <span className={`tool-status status-${step.status}`}>{STATUS_LABEL[step.status]}</span>}
           {step.result && !step.result.startsWith("PERMISSION:") && (step.status === "done" || step.status === "error") && (
-            <button className="tool-result-toggle inline" onClick={() => setShowResult((s) => !s)} aria-expanded={showResult}>
-              <Icon name={showResult ? "chevronUp" : "chevron"} size={11} /> {showResult ? "Hide" : "Output"}
+            <button className="tool-result-toggle inline" onClick={() => setShowResult((s) => !s)} aria-expanded={showResult} title={showResult ? "Hide what it returned" : "Show what it returned"}>
+              <Icon name={showResult ? "chevronUp" : "chevron"} size={11} />
             </button>
           )}
         </div>

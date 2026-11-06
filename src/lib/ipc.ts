@@ -612,4 +612,6 @@ export interface ReleaseInfo {
   notes: string;
   date: string;
 }
+export const moveFromPersonalAvailable = () => invoke<boolean>("move_from_personal_available");
+export const moveFromPersonal = () => invoke<void>("move_from_personal");
 export const updateReleases = () => invoke<ReleaseInfo[]>("update_releases");

@@ -10,6 +10,7 @@ import { SessionGlyph, sessionLabel, useSessionState } from "./SessionStatus";
 function SessionRow({ chat, index }: { chat: Chat; index: number }) {
   const focusedChatId = useChats((s) => s.focusedChatId);
   const layout = useChats((s) => s.layout);
+  const onScreen = useChats((s) => s.layout === "focus" && s.focusSet.includes(chat.id));
   const { kind, label } = useSessionState(chat);
   const runtime = useTerminals((s) => s.byId[chat.id]);
   const open = () => {
@@ -23,7 +24,7 @@ function SessionRow({ chat, index }: { chat: Chat; index: number }) {
   };
   return (
     <button
-      className={`side-session status-${kind}${chat.id === focusedChatId ? " active" : ""}`}
+      className={`side-session status-${kind}${chat.id === focusedChatId ? " active" : ""}${onScreen ? " on-screen" : ""}`}
       onClick={open}
       title={`${chat.title} · ${sessionLabel(chat)} · ${label}${chat.cwd ? `\n${chat.cwd}` : ""}`}
     >

@@ -623,7 +623,14 @@ mod tmux {
 
     /// E.V's own tmux server (tests use their own, so they never touch real sessions).
     fn server() -> String {
-        std::env::var("GIDEON_TMUX_SERVER").unwrap_or_else(|_| "ev".into())
+        // After moving from the personal E.V its sessions keep living on that app's server.
+        std::env::var("GIDEON_TMUX_SERVER").unwrap_or_else(|_| {
+            std::fs::read_to_string(crate::shell_env::home_dir().join("Library/Application Support/com.ducknac.ev/tmux-server"))
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "ev".into())
+        })
     }
     const CONFIG: &str = r##"# Written by E.V: tmux only keeps sessions alive; E.V's window shows them.
 set -g status off

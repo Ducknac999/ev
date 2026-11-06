@@ -100,6 +100,29 @@ function ClaudeWindow({ label, window: w, now }: { label: string; window: UsageW
   );
 }
 
+/** Claude plan usage as one small ring (5-hour window); the week's number is in its tooltip. */
+export function ClaudeUsageRing() {
+  const usage = useClaudeUsage((s) => s.usage);
+  const now = useNow(10_000);
+  const five = usage?.fiveHour;
+  if (!five) return null;
+  const used = Math.round(five.utilization);
+  const week = usage?.sevenDay ? Math.round(usage.sevenDay.utilization) : null;
+  const reset = five.resetsAt ? formatReset(Date.parse(five.resetsAt), now) : null;
+  const r = 7;
+  const c = 2 * Math.PI * r;
+  const tone = used >= 90 ? "var(--crimson)" : used >= 70 ? "var(--amber)" : "var(--neon)";
+  return (
+    <span className="usage-ring" title={`Claude: ${used}% of the 5-hour limit${reset ? ` (resets ${reset})` : ""}${week !== null ? ` · ${week}% of the week` : ""}`}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <circle cx="9" cy="9" r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="2.2" />
+        <circle cx="9" cy="9" r={r} fill="none" stroke={tone} strokeWidth="2.2" strokeLinecap="round" strokeDasharray={`${(c * used) / 100} ${c}`} transform="rotate(-90 9 9)" />
+      </svg>
+      <span>{used}%</span>
+    </span>
+  );
+}
+
 export function ClaudeUsageRow() {
   const usage = useClaudeUsage((s) => s.usage);
   const error = useClaudeUsage((s) => s.error);

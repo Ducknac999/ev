@@ -5,7 +5,8 @@ import { folderName, useChats } from "../store/chats";
 import { useDropTarget } from "../store/dropTarget";
 import { useSettings } from "../store/settings";
 import type { Chat } from "../types";
-import { ChatControls } from "./ChatControls";
+import { PaneMenu } from "./PaneMenu";
+import { closeChat, requestDelete, toggleCollapsed } from "../services/chatLifecycle";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
 import { MessageList } from "./MessageList";
@@ -20,7 +21,6 @@ export type PaneVariant = "card" | "focus";
 
 export function ChatPane({
   chat,
-  index,
   focused,
   variant,
 }: {
@@ -31,6 +31,8 @@ export function ChatPane({
 }) {
   const { focusChat, renameChat } = useChats.getState();
   const [editing, setEditing] = useState(false);
+  // Usage bars and the key picker live behind ⋯ (most of the time nobody needs them on screen).
+  const [showUsage, setShowUsage] = useState(false);
   const [draftTitle, setDraftTitle] = useState(chat.title);
   const dropping = useDropTarget((s) => s.targetId === chat.id);
   const settings = useSettings((s) => s.settings);
@@ -85,9 +87,6 @@ export function ChatPane({
       )}
       <header className="pane-head">
         <div className="pane-row">
-          <span className="pane-index" title={index < 9 ? `⌘${index + 1}` : undefined}>
-            {String(index + 1).padStart(2, "0")}
-          </span>
           {editing ? (
             <span className="pane-rename">
               <input
@@ -113,42 +112,45 @@ export function ChatPane({
               )}
             </span>
           ) : (
-            <>
-              <h2 className="pane-title" title={`${chat.title} — double-click to rename`} onDoubleClick={startRename}>
-                {chat.title}
-              </h2>
-              <button className="icon-btn ghost small rename-btn" onClick={startRename} title="Rename this chat" aria-label="Rename this chat">
-                <Icon name="edit" size={12} />
-              </button>
-            </>
+            <h2 className="pane-title" title={`${chat.title} — double-click to rename`} onDoubleClick={startRename}>
+              {chat.title}
+            </h2>
           )}
           <HelpersBadge chat={chat} />
           <SessionStatusPill chat={chat} />
-          <ChatControls chat={chat} focusAction={variant === "card" ? "expand" : "dock"} />
+          <PaneMenu
+            items={[
+              { label: "Rename", icon: "edit", onSelect: startRename },
+              { label: chat.cwd ? `Folder: ${folderName(chat.cwd)}` : "Choose a folder", icon: "folder", onSelect: () => void changeFolder() },
+              { label: showUsage ? "Hide usage and keys" : "Show usage and keys", icon: "key", onSelect: () => setShowUsage((v) => !v) },
+              ...(chat.claudeSessionId ? [{ label: "Continue in Claude Code", icon: "spark" as const, onSelect: continueInClaude }] : []),
+              variant === "card"
+                ? { label: "Open big (focus)", icon: "expand" as const, onSelect: () => useChats.getState().openInFocus(chat.id), divider: true }
+                : { label: "Back to the list", icon: "dock" as const, onSelect: () => useChats.getState().removeFromFocus(chat.id), divider: true },
+              { label: chat.collapsed ? "Expand" : "Minimize", icon: "minimize", hint: "⌘⇧M", onSelect: () => toggleCollapsed(chat.id) },
+              { label: "Close", icon: "close", hint: "⌘⇧W", onSelect: () => closeChat(chat.id) },
+              { label: "Delete", icon: "trash", hint: "⌘⇧⌫", danger: true, onSelect: () => requestDelete(chat.id) },
+            ]}
+          />
         </div>
-        <div className="pane-row pane-sub">
-          <ModelPicker chat={chat} />
-          {chat.kind === "ai" && canThink(chat.model) && (
-            <button
-              className={`folder-chip think-chip${chat.thinking ? " on" : ""}`}
-              onClick={() => useChats.getState().setThinking(chat.id, !chat.thinking)}
-              aria-pressed={chat.thinking === true}
-              title={chat.thinking ? "Thinking on: reasons before answering (slower, better on hard problems). Click to turn off." : "Thinking off: answers right away. Click to make it think first."}
-            >
-              <Icon name="spark" size={11} /> Think {chat.thinking ? "on" : "off"}
-            </button>
-          )}
-          <VoiceButtons chat={chat} />
-          <button className="folder-chip" onClick={() => void changeFolder()} title={`${chat.cwd ?? "No project folder (home)"} — click to change`}>
-            <Icon name="folder" size={11} /> {chat.cwd ? folderName(chat.cwd) : "Choose folder"}
-          </button>
-          {chat.claudeSessionId && (
-            <button className="folder-chip claude-link" onClick={continueInClaude} title="This was a Claude chat — reopen its Claude session in Claude Code">
-              <Icon name="spark" size={11} /> Continue in Claude Code
-            </button>
-          )}
-        </div>
-        {!chat.collapsed && <ChatUsageRow chat={chat} />}
+        {!chat.collapsed && (
+          <div className="pane-row pane-sub">
+            <ModelPicker chat={chat} />
+            {chat.kind === "ai" && canThink(chat.model) && (
+              <button
+                className={`folder-chip think-chip${chat.thinking ? " on" : ""}`}
+                onClick={() => useChats.getState().setThinking(chat.id, !chat.thinking)}
+                aria-pressed={chat.thinking === true}
+                title={chat.thinking ? "Thinking on: reasons before answering (slower, better on hard problems). Click to turn off." : "Thinking off: answers right away. Click to make it think first."}
+              >
+                <Icon name="spark" size={11} /> Think
+              </button>
+            )}
+            <span className="pane-spacer" />
+            <VoiceButtons chat={chat} />
+          </div>
+        )}
+        {!chat.collapsed && showUsage && <ChatUsageRow chat={chat} />}
       </header>
 
       {!chat.collapsed && chat.paused && (
@@ -167,8 +169,8 @@ export function ChatPane({
         messages={chat.messages}
         empty={
           <div className="pane-empty">
-            <div className="pane-empty-title">{modelLabel(chat.model)}</div>
-            <div className="pane-empty-sub">Awaiting input</div>
+            <div className="pane-empty-title">Ask anything, or give E.V a task</div>
+            <div className="pane-empty-sub">{modelLabel(chat.model)}</div>
           </div>
         }
       />

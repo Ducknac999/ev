@@ -131,7 +131,7 @@ async function claudeArgs(chat: Chat): Promise<string[]> {
   const cwd = chat.cwd ?? "~";
   const { resumeClaude } = useSettings.getState().settings.terminal;
   if (chat.claudeSessionId) {
-    const known = await claudeSessions(cwd).catch(() => []);
+    const known = (await claudeSessions(cwd).catch(() => [])) ?? [];
     if (known.some((s) => s.id === chat.claudeSessionId) && (resumeClaude || !restoredAtLaunch.has(chat.id))) {
       return ["--resume", chat.claudeSessionId];
     }

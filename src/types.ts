@@ -291,6 +291,12 @@ export interface Settings {
   customServer: { baseUrl: string };
   /** Coding agents in the terminal: Claude Code, Codex, or both (set in the start window). */
   agents: { claude: boolean; codex: boolean };
+  /** The top bar: always shown, hidden until the cursor reaches the top edge, or icons only. */
+  topBar: "always" | "auto" | "compact";
+  /** The start window opens at this step (0–6) next time, e.g. Permissions after moving in. */
+  onboardStart?: number;
+  /** This E.V took over the personal build's data (Settings → General → Move my E.V into this app). */
+  movedFromPersonal?: boolean;
   /** The start window was finished (or closed); it doesn't come back by itself. */
   onboarded: boolean;
   defaultModel: ModelRef;

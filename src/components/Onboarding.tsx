@@ -465,6 +465,12 @@ function DoneStep() {
         <Icon name="check" size={28} />
       </div>
       <h2>You're set</h2>
+      {s.movedFromPersonal && (
+        <p className="ob-lead">
+          Everything from your other E.V is here: keys, chats, memory and settings, and your open sessions kept running. The old app is still on
+          your Mac as a backup — once you've checked, you can move it to the Trash.
+        </p>
+      )}
       <ul className="ob-summary">
         {items.map(([ok, text]) => (
           <li key={text} className={ok ? "ok" : ""}>
@@ -502,7 +508,8 @@ class StepGuard extends Component<{ children: ReactNode }, { failed: string | nu
 }
 
 export function Onboarding() {
-  const [step, setStep] = useState(-1);
+  const start = useSettings.getState().settings.onboardStart;
+  const [step, setStep] = useState(typeof start === "number" ? start : -1);
   const [tools, setTools] = useState<OnboardTools | null>(null);
   const refresh = () => void onboardTools().then(setTools).catch(() => {});
   useEffect(() => {
@@ -510,7 +517,11 @@ export function Onboarding() {
     const timer = window.setInterval(refresh, 4000);
     return () => window.clearInterval(timer);
   }, []);
-  const finish = () => void change((s) => void (s.onboarded = true));
+  const finish = () =>
+    void change((s) => {
+      s.onboarded = true;
+      delete s.onboardStart;
+    });
   const last = STEPS.length - 1;
 
   return (

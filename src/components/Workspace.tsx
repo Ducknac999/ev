@@ -8,7 +8,7 @@ import { ChatControls } from "./ChatControls";
 import { ChatPane, type PaneVariant } from "./ChatPane";
 import { Icon, type IconName } from "./Icon";
 import { useSettings } from "../store/settings";
-import { SessionGlyph, sessionLabel, SessionStatusPill, useSessionState } from "./SessionStatus";
+import { SessionGlyph, sessionLabel, SessionStatusPill } from "./SessionStatus";
 import { TerminalPane } from "./TerminalPane";
 import { BrowserPane } from "./BrowserPane";
 
@@ -88,27 +88,6 @@ function GridView({ chats, focusedChatId }: { chats: Chat[]; focusedChatId: stri
   );
 }
 
-function DockItem({ chat, index }: { chat: Chat; index: number }) {
-  const openInFocus = useChats((s) => s.openInFocus);
-  const { kind } = useSessionState(chat);
-  return (
-    <button
-      className={`dock-item status-${kind}`}
-      onClick={() => openInFocus(chat.id)}
-      title={`${chat.title} · ${sessionLabel(chat)} — click to bring into focus`}
-    >
-      <span className="dock-index">{pad(index + 1)}</span>
-      <span className="dock-text">
-        <span className="dock-title">{chat.title}</span>
-        <span className="dock-meta">
-          <SessionGlyph chat={chat} /> {sessionLabel(chat)}
-        </span>
-      </span>
-      <span className="status-dot" aria-hidden="true" />
-    </button>
-  );
-}
-
 /** Up to four chats side by side or 2x2; collapsed and background chats wait in the dock. */
 function FocusView({ chats, focusedChatId }: { chats: Chat[]; focusedChatId: string | null }) {
   const focusSet = useChats((s) => s.focusSet);
@@ -119,20 +98,9 @@ function FocusView({ chats, focusedChatId }: { chats: Chat[]; focusedChatId: str
   }
   const docked = chats.filter((c) => !focused.includes(c));
 
+  // One session list for every layout: the sidebar (⌘B). Sessions not on screen wait there.
   return (
-    <div className={`focus-layout${docked.length ? "" : " no-dock"}`}>
-      {docked.length > 0 && (
-        <aside className="focus-dock" aria-label="Background sessions">
-          <div className="hud-label dock-head">
-            Dock <span className="muted">· {docked.length}</span>
-          </div>
-          <div className="dock-list">
-            {docked.map((chat) => (
-              <DockItem key={chat.id} chat={chat} index={chats.indexOf(chat)} />
-            ))}
-          </div>
-        </aside>
-      )}
+    <div className="focus-layout no-dock">
       {focused.length > 0 ? (
         <div className={`focus-grid count-${focused.length}`}>
           {focused.map((chat) => (
@@ -140,10 +108,10 @@ function FocusView({ chats, focusedChatId }: { chats: Chat[]; focusedChatId: str
           ))}
         </div>
       ) : (
-        <div className="focus-placeholder hud-label">All sessions collapsed — pick one from the dock</div>
+        <div className="focus-placeholder">Everything is minimized — pick a session in the sidebar (⌘B)</div>
       )}
       {focused.length >= FOCUS_LIMIT && docked.length > 0 && (
-        <div className="focus-hint hud-label">Focus holds {FOCUS_LIMIT} · opening another replaces the oldest</div>
+        <div className="focus-hint">Focus shows up to {FOCUS_LIMIT} · opening another replaces the oldest</div>
       )}
     </div>
   );
@@ -197,7 +165,7 @@ function TrayView({ chats }: { chats: Chat[] }) {
               <SessionStatusPill chat={chat} />
             </span>
             <span className="tray-actions" role="cell" onClick={(e) => e.stopPropagation()}>
-              <button className="btn neon small" onClick={() => openInFocus(chat.id)} title="Open in focus view">
+              <button className="btn small" onClick={() => openInFocus(chat.id)} title="Open in focus view">
                 <Icon name="expand" size={12} /> Focus
               </button>
               <ChatControls chat={chat} />

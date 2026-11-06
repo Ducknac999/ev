@@ -11,6 +11,7 @@ import { GideonBrowserSettings } from "./GideonBrowserSettings";
 import { ClaudePlanUsage } from "./ClaudePlanUsage";
 import { SpendingSettings } from "./SpendingSettings";
 import { UpdateSettings } from "./UpdateSettings";
+import { MoveInCard } from "./MoveInCard";
 import {
   ActivitySettings,
   ApprovalKeysSettings,
@@ -261,6 +262,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {tab === "general" && (
             <div className="settings-card">
               <label className="field">
+                <span>Top bar</span>
+                <select value={draft.topBar} onChange={(e) => update((d) => void (d.topBar = e.target.value as typeof d.topBar))}>
+                  <option value="always">Always show</option>
+                  <option value="auto">Auto-hide — slides in when the cursor reaches the top</option>
+                  <option value="compact">Compact — icons only, no task list</option>
+                </select>
+              </label>
+              <label className="field">
                 <span>Default model for new chats</span>
                 <select
                   value={defaultKey}
@@ -326,6 +335,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           )}
           {tab === "general" && <SpendingSettings draft={draft} update={update} />}
           {tab === "updates" && <UpdateSettings />}
+          {tab === "general" && <MoveInCard />}
           {tab === "general" && (
             <div className="settings-card">
               <h4>Setup</h4>
