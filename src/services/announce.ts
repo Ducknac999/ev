@@ -1,3 +1,4 @@
+import { voiceLog } from "../audio/engine";
 import { speechQueue } from "../audio/speech";
 import { mediaNow, mediaPause, mediaResume, notchMessage, type MediaNow } from "../lib/ipc";
 import { uid } from "../lib/ids";
@@ -96,9 +97,11 @@ async function speakOverMusic(text: string, now: MediaNow, label?: string): Prom
     return "spoken";
   }
   const paused = await mediaPause(now.music).catch(() => [] as string[]);
+  voiceLog({ event: "paused", music: now.music, paused });
   speak(text, label);
   await spoken();
   if (paused.length) await mediaResume(paused).catch(() => {});
+  voiceLog({ event: "resumed", paused });
   return paused.length ? "paused" : "spoken";
 }
 
@@ -146,6 +149,7 @@ export async function announce(text: string, mode: AnnounceMode, label?: string,
   }
   if (!now.calls.length && !onScreen(chatId)) void notch(said);
   const outcome = await speakOverMusic(said, now, label);
+  voiceLog({ event: "announce", outcome, music: now.music, calls: now.calls, other: now.other, request: request.slice(0, 60) });
   if (outcome === "call") return { spoken: false, note: `🔇 Not spoken: you're on a call (${now.calls.join(", ")}), shown in the notch` };
   const why = override === "speak" ? "you asked for it out loud" : "you asked by voice";
   return { spoken: true, note: outcome === "paused" ? `🔈 Spoken (${music} paused): ${why}` : `🔈 Spoken: ${why}` };

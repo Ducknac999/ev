@@ -1,7 +1,7 @@
 import { ttsSynthesize } from "../lib/ipc";
 import { useSettings } from "../store/settings";
 import { useVoice } from "../store/voice";
-import { audioEngine } from "./engine";
+import { audioEngine, voiceLog } from "./engine";
 import { takeSpeakable } from "./speakable";
 
 /**
@@ -118,6 +118,7 @@ class SpeechQueue {
           audio = await current;
         } catch (err) {
           useVoice.getState().setError(`Speech failed: ${String(err)}`);
+          voiceLog({ event: "synth failed", error: String(err).slice(0, 200) });
           continue;
         }
         if (generation !== this.generation) break;

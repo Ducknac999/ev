@@ -22,8 +22,16 @@ class AudioEngine {
   /** Chunks of a streamed reply (Gemini Live) scheduled back to back. */
   private streamed = new Set<AudioBufferSourceNode>();
   private timeBuf = new Float32Array(2048);
+  /** The Mac's output device changed (headphones, a USB DAC, AirPods): the next answer gets a fresh context. */
+  private deviceChanged = false;
+  private echo = false;
+  private watching = false;
 
   context(): AudioContext {
+    if (!this.watching && typeof navigator !== "undefined" && navigator.mediaDevices?.addEventListener) {
+      this.watching = true;
+      navigator.mediaDevices.addEventListener("devicechange", () => (this.deviceChanged = true));
+    }
     if (!this.ctx) {
       this.ctx = new AudioContext({ latencyHint: "interactive" });
       this.outAnalyser = this.ctx.createAnalyser();
@@ -46,6 +54,7 @@ class AudioEngine {
    * speakers, but macOS also turns all other audio down while it's on — so it's off unless asked.
    */
   async startMic(echo = false): Promise<void> {
+    this.echo = echo;
     if (this.micStream) return;
     const ctx = this.context();
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -116,19 +125,69 @@ class AudioEngine {
     return Math.min(1, Math.sqrt(sum / this.timeBuf.length) * 4);
   }
 
+  /**
+   * A context that can actually make sound. macOS can leave E.V's context suspended or
+   * "interrupted" (after another app takes the audio, or a media key), or tied to an output device
+   * that's gone — then an answer plays into nothing. Wake it, or start a new one.
+   */
+  private async ready(): Promise<AudioContext> {
+    const changed = this.deviceChanged;
+    this.deviceChanged = false;
+    if (this.ctx && changed) {
+      voiceLog({ event: "rebuild", why: "output device changed" });
+      await this.rebuild();
+    }
+    let ctx = this.context();
+    if (!isRunning(ctx)) {
+      await wake(ctx);
+      if (!isRunning(ctx)) {
+        voiceLog({ event: "rebuild", why: `context ${ctx.state}` });
+        await this.rebuild();
+        ctx = this.context();
+        await wake(ctx);
+      }
+    }
+    return ctx;
+  }
+
+  /** A fresh context; the mic (Talk mode, Hey E.V) is reconnected to it if it was on. */
+  private async rebuild(): Promise<void> {
+    const old = this.ctx;
+    const hadMic = this.micStream !== null;
+    if (hadMic) this.stopMic();
+    this.ctx = null;
+    this.outAnalyser = null;
+    this.voiceGain = null;
+    void old?.close().catch(() => {});
+    this.context();
+    if (hadMic) await this.startMic(this.echo).catch(() => {});
+  }
+
   /** Plays encoded audio through the output analyser; resolves when playback ends or stops. */
   async play(encoded: ArrayBuffer): Promise<void> {
-    const ctx = this.context();
+    const ctx = await this.ready();
     const buffer = await ctx.decodeAudioData(encoded.slice(0));
     this.stopPlayback();
+    // Every answer starts at full volume (talking over E.V turns it down only while you talk).
+    this.voiceGain!.gain.cancelScheduledValues(ctx.currentTime);
+    this.voiceGain!.gain.setValueAtTime(1, ctx.currentTime);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.voiceGain!);
     this.playing = source;
+    let peak = 0;
+    const meter = window.setInterval(() => (peak = Math.max(peak, this.outputLevel())), 100);
     await new Promise<void>((resolve) => {
-      source.onended = () => resolve();
+      // If the context stalls, onended never comes: don't hang the queue (and the paused music).
+      const guard = window.setTimeout(resolve, buffer.duration * 1000 + 2500);
+      source.onended = () => {
+        window.clearTimeout(guard);
+        resolve();
+      };
       source.start();
     });
+    window.clearInterval(meter);
+    voiceLog({ state: ctx.state, seconds: Math.round(buffer.duration * 10) / 10, peak: Math.round(peak * 100) / 100, rate: ctx.sampleRate });
     if (this.playing === source) this.playing = null;
   }
 
@@ -202,3 +261,25 @@ class AudioEngine {
 }
 
 export const audioEngine = new AudioEngine();
+
+/** The last few answers' playback (context state, length, loudness), for diagnosing silence. */
+export function voiceLog(entry: Record<string, unknown>): void {
+  try {
+    const store = globalThis.localStorage;
+    if (!store) return;
+    const log = JSON.parse(store.getItem("ev.voiceLog") ?? "[]") as unknown[];
+    log.push({ at: new Date().toISOString(), ...entry });
+    store.setItem("ev.voiceLog", JSON.stringify(log.slice(-40)));
+  } catch {
+    /* diagnostics only */
+  }
+}
+
+async function wake(ctx: AudioContext): Promise<void> {
+  await Promise.race([ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 800))]);
+}
+
+/** Read fresh each time (it changes while we wait). */
+function isRunning(ctx: AudioContext): boolean {
+  return ctx.state === "running";
+}
