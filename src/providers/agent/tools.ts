@@ -434,7 +434,7 @@ export interface ToolEnv {
   /** Mac control: final-action approvals, task apps and undo. */
   mac?: MacEnv;
   /** The chat and the step being run, for memory and schedule tools. */
-  memory?: { chatId: string; chatTitle: string; stepId: string; userText?: string };
+  memory?: { chatId: string; chatTitle: string; stepId: string; userText?: string; heardByVoice?: boolean };
   /** Searches made so far in this task; capped so models open results instead of re-searching. */
   searches?: number;
   /** Which E.V Browser tab this agent uses ("main", or one per helper). */

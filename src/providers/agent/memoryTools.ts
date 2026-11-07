@@ -1,6 +1,6 @@
 import { passphraseCheck } from "../../lib/ipc";
 import { describeEvent, readBack, syncToCalendar, upcoming } from "../../services/schedule";
-import { announceImportant } from "../../services/announce";
+import { announceImportant, confirmQuietly } from "../../services/announce";
 import { useSettings } from "../../store/settings";
 import { useVault } from "../../store/vault";
 import type { MemoryItem, MemoryKind, Repeat, ScheduleItem, UndoInfo } from "../../types";
@@ -128,6 +128,8 @@ export interface MemoryContext {
   chatId: string;
   chatTitle: string;
   stepId: string;
+  /** The request was spoken (Hey E.V, hold to talk): a reminder is read back out loud. */
+  heardByVoice?: boolean;
   /** What the user said this turn; schedule changes need an explicit request in it. */
   userText?: string;
 }
@@ -213,8 +215,10 @@ export async function executeMemoryTool(name: string, args: Record<string, unkno
       const past = at < Date.now() && repeat === "none" ? " Note: that time is already in the past — tell the user." : "";
       // In the Mac's Calendar too (it rings even when E.V is closed), and said back so a misheard day or time is caught.
       syncToCalendar("upsert", event);
-      void announceImportant(`Reminder set. ${readBack(event)}`);
-      return { output: `Added ${event.id}: ${describeEvent(event)}.${past} It's in Calendar too, and E.V read it back to the user out loud.`, display: describeEvent(event), ok: true, undo: { type: "event-added", id: event.id } };
+      // Asked by voice: read back out loud, so a misheard day or time is caught. Typed: chime + notch.
+      const confirm = ctx.heardByVoice ? announceImportant : confirmQuietly;
+      void confirm(`Reminder set. ${readBack(event)}`);
+      return { output: `Added ${event.id}: ${describeEvent(event)}.${past} It's in Calendar too, and E.V ${ctx.heardByVoice ? "read it back to the user out loud" : "showed it in the notch"}.`, display: describeEvent(event), ok: true, undo: { type: "event-added", id: event.id } };
     }
     case "schedule_update": {
       if (!userAskedFor(name, ctx.userText)) return { output: NOT_ASKED, display: "", ok: false };
@@ -232,7 +236,7 @@ export async function executeMemoryTool(name: string, args: Record<string, unkno
       if (args.notes !== undefined) patch.notes = str(args.notes) || undefined;
       const after = vault.updateEvent(id, patch)!;
       syncToCalendar("upsert", after);
-      void announceImportant(`Reminder changed. ${readBack(after)}`);
+      void (ctx.heardByVoice ? announceImportant : confirmQuietly)(`Reminder changed. ${readBack(after)}`);
       return { output: `Updated ${id}: ${describeEvent(after)}.`, display: describeEvent(after), ok: true, undo: { type: "event-changed", before } };
     }
     case "schedule_delete": {

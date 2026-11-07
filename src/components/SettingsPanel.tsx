@@ -193,13 +193,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </select>
               </label>
               <label className="field">
-                <span>When you speak a task while music plays (“skip”, “repeat this”)</span>
+                <span>When you speak a command (“next song”, “pause”, “open Spotify”)</span>
                 <select value={draft.voice.replies.tasksOverMusic} onChange={(e) => update((d) => void (d.voice.replies.tasksOverMusic = e.target.value as "notch" | "speak"))}>
-                  <option value="notch">Quick line in the notch, music keeps playing</option>
-                  <option value="speak">Pause the music and say it</option>
+                  <option value="notch">Chime + quick line in the notch, never spoken</option>
+                  <option value="speak">Say it out loud</option>
                 </select>
               </label>
-              <p className="settings-intro">When you speak a question, the answer is always said out loud (music pauses for it).</p>
+              <p className="settings-intro">When you speak a question, the answer is always said out loud (music pauses for it, if Now Playing says something's playing). Typed reminders get a chime and the notch; spoken ones are read back.</p>
               <label className="field">
                 <span>Reminders, approvals and failed tasks</span>
                 <select value={draft.voice.replies.important} onChange={(e) => update((d) => void (d.voice.replies.important = e.target.value as "speak" | "notch"))}>

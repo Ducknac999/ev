@@ -357,8 +357,11 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   if (!adapter) return;
 
   /** A whole answer, said (or shown in the notch) the way this request asked for. */
-  const sayNow = (text: string, key: string) => {
-    if (options.announce) void announce(text, options.announce, voiceLabel(chatId), content, chatId);
+  const sayNow = (text: string, key: string, messageId?: string) => {
+    if (options.announce)
+      void announce(text, options.announce, voiceLabel(chatId), content, chatId).then(
+        (why) => messageId && why.note && useChats.getState().patchMessage(chatId, messageId, { voiceNote: why.note }),
+      );
     else if (options.speak) speechQueue.feed(key, text, true, voiceLabel(chatId));
   };
 
@@ -382,8 +385,9 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       const said = await runQuickCommand(quick);
       const now = Date.now();
       store.appendMessage(chatId, { id: uid("m-"), role: "user", content, createdAt: now, instant: true });
-      store.appendMessage(chatId, { id: uid("m-"), role: "assistant", content: said, createdAt: now, instant: true });
-      sayNow(said, uid("quick-"));
+      const replyId = uid("m-");
+      store.appendMessage(chatId, { id: replyId, role: "assistant", content: said, createdAt: now, instant: true });
+      sayNow(said, uid("quick-"), replyId);
       useVault.getState().logActivity({ at: now, chat: chat.title, tool: "instant", title: content, outcome: "done", detail: said });
       return;
     } catch {
@@ -1292,7 +1296,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
           } else call.args = { ...call.args, picture: false };
         }
         useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "running" });
-        env.memory = { chatId, chatTitle: chatTitle(), stepId: toolStep.id, userText: content };
+        env.memory = { chatId, chatTitle: chatTitle(), stepId: toolStep.id, userText: content, heardByVoice: Boolean(options.announce) };
         let outcome = await executeTool(call.name, call.args, env);
         const pictures = [outcome.image, ...(outcome.images ?? [])].filter((p): p is string => Boolean(p));
         if (seeOnce && pictures.length) {

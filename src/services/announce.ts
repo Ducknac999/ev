@@ -9,10 +9,10 @@ import { useSettings } from "../store/settings";
 /**
  * How E.V answers a spoken request (Hey E.V or hold to talk), like a person would:
  * - You asked something ("what's…", "how many…"): it's said out loud. Music is paused for it and
- *   comes back after. A call or meeting is never talked over: notch. Other sound (audio tools like
- *   FineTune, a paused browser tab, system sounds) doesn't count as music.
- * - You told it to do something ("repeat this song"): the confirmation shows in the Vorssaint notch
- *   and the music keeps playing. With nothing playing it's simply said.
+ *   comes back after. "Playing" means what macOS Now Playing says (Control Center), so audio tools
+ *   like FineTune or a paused tab never count. A call or meeting is never talked over: notch.
+ * - You told it to do something ("next song", "pause", "open Spotify"): a chime and the
+ *   confirmation in the Vorssaint notch — never said, music or not (like Willow's success chime).
  * - "…out loud" / "tell me" in the request → spoken; "…quietly" / "just text me" → notch.
  * - Afterwards: "say that" speaks the last notch answer; "shh" / "quiet" stops talking and moves
  *   the answer to the notch.
@@ -132,12 +132,14 @@ export async function announce(text: string, mode: AnnounceMode, label?: string,
   const now = await whatsPlaying();
   const music = now.music.join(", ");
   const kind = requestKind(request);
-  const isTask = kind === "task" || (kind === "unclear" && isConfirmation(said));
-  const tasksOverMusic = useSettings.getState().settings.voice.replies.tasksOverMusic;
-  if (override !== "speak" && now.music.length > 0 && isTask && tasksOverMusic === "notch") {
+  // A command's short confirmation ("Next song.") — not an answer worth hearing ("look up the weather").
+  const isTask = kind !== "question" && isConfirmation(said);
+  const tasks = useSettings.getState().settings.voice.replies.tasksOverMusic;
+  if (override !== "speak" && isTask && tasks === "notch") {
     if (await notch(said)) {
+      void playChime();
       last = { text: said, label, at: Date.now(), spoken: false };
-      return { spoken: false, note: `🔇 Shown in the notch: a task while ${music} plays` };
+      return { spoken: false, note: "🔇 Chime + notch: it was a command" };
     }
     speak(said, label);
     return { spoken: true, note: "🔈 Spoken: the notch isn't running" };
@@ -171,6 +173,14 @@ export async function announceImportant(text: string): Promise<void> {
     return;
   }
   await speakOverMusic(said, now);
+}
+
+/** A done-without-talking confirmation (a typed reminder): the notch and a chime. */
+export async function confirmQuietly(text: string): Promise<void> {
+  const said = text.trim();
+  if (!said) return;
+  void notch(said);
+  void playChime();
 }
 
 /** A short system sound for alerts that aren't spoken. */

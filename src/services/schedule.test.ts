@@ -8,7 +8,11 @@ vi.mock("../lib/ipc", () => ({
   vaultSave: async () => {},
   calendarSync: async () => {},
 }));
-vi.mock("./announce", () => ({ announceImportant: async () => {} }));
+const confirmations: string[] = [];
+vi.mock("./announce", () => ({
+  announceImportant: async (text: string) => void confirmations.push(`spoken: ${text}`),
+  confirmQuietly: async (text: string) => void confirmations.push(`chime: ${text}`),
+}));
 vi.mock("../audio/speech", () => ({ speechQueue: { feed: () => {}, stop: () => {} } }));
 
 const { occurrences, upcoming, checkReminders, describeEvent } = await import("./schedule");
@@ -122,6 +126,13 @@ describe("teaching", () => {
     const removed = await executeMemoryTool("schedule_delete", { id }, { ...ctx, userText: "Cancel gym" });
     expect(removed.undo).toMatchObject({ type: "event-removed" });
     expect(useVault.getState().schedule).toHaveLength(0);
+  });
+
+  it("reads a reminder back out loud only when it was asked by voice", async () => {
+    confirmations.length = 0;
+    await executeMemoryTool("schedule_add", { title: "Scouts", start: "2030-10-10 18:00" }, { ...ctx, userText: "remind me to get ready for scouts at 6" });
+    await executeMemoryTool("schedule_add", { title: "Scouts", start: "2030-10-11 18:00" }, { ...ctx, userText: "remind me to get ready for scouts at 6", heardByVoice: true });
+    expect(confirmations.map((c) => c.split(":")[0])).toEqual(["chime", "spoken"]);
   });
 
   it("reads back only well-formed vault data", () => {

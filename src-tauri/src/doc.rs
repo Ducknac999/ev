@@ -60,7 +60,7 @@ struct Lib {
     free: FreeFn,
 }
 
-fn lib_path() -> Option<PathBuf> {
+pub(crate) fn lib_path() -> Option<PathBuf> {
     let bundled = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("../Resources/libgideoncapture.dylib")));
     // Development builds and tests use the copy in the source tree (release builds never carry that path).
     #[cfg(any(debug_assertions, test))]

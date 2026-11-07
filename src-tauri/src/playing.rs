@@ -103,89 +103,141 @@ fn playing_pids() -> Vec<i32> {
     pids
 }
 
+/// What macOS Now Playing says (what Control Center shows): the app it belongs to and whether
+/// it's playing. Read by loading E.V's helper library into /usr/bin/perl — since macOS 15.4 only
+/// Apple-signed programs may read Now Playing (see helpers/nowplayinglib.swift).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct NowPlaying {
+    pub playing: bool,
+    #[serde(default)]
+    pub pid: i32,
+    #[serde(default)]
+    pub app: String,
+}
+
+const LOADER: &str = r#"use DynaLoader; my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 2; my $s = DynaLoader::dl_find_symbol($h, "ev_nowplaying_get") or exit 3; DynaLoader::dl_install_xsub("main::get", $s); main::get();"#;
+
+/// None when Now Playing can't be read (a future macOS may block it): E.V then falls back to
+/// asking Spotify and Music directly, and never presses play/pause on a guess.
+pub fn now_playing() -> Option<NowPlaying> {
+    let lib = crate::doc::lib_path()?;
+    let out = crate::mac_control::run_timed("/usr/bin/perl", &["-e", LOADER, &lib.display().to_string()], 4).ok()?;
+    let mut now: NowPlaying = serde_json::from_str(out.lines().last()?).ok()?;
+    // E.V's own voice never counts.
+    if now.pid == std::process::id() as i32 {
+        now.playing = false;
+    }
+    Some(now)
+}
+
 /// What the sound on the Mac actually is, so E.V knows whether to pause it, stay quiet, or just talk.
 #[derive(serde::Serialize, Default, Debug)]
 pub struct MediaNow {
-    /// Really playing music or video, and E.V can pause it: "Spotify", "Brave Browser".
+    /// Really playing (Now Playing says so), and E.V can pause it: "Spotify", "Brave Browser".
     pub music: Vec<String>,
     /// A call or meeting — never talked over.
     pub calls: Vec<String>,
-    /// Sound E.V ignores: audio tools (FineTune, SoundSource…), a paused browser, system sounds.
+    /// Sound E.V ignores: audio tools (FineTune, SoundSource…), paused players, system sounds.
     pub other: Vec<String>,
 }
 
 #[derive(Debug, PartialEq)]
 enum Kind {
     Call,
-    /// Spotify / Music: asked directly whether they're playing, paused and resumed by name.
+    /// Spotify / Music: paused and resumed by name, so nothing else is touched.
     Scriptable,
-    /// Chromium browsers: playing only when a tab says "Audio playing".
-    Chromium,
-    /// Other players (Safari, VLC, IINA, Podcasts…): playing when they make sound.
-    Player,
     Other,
 }
 
 fn kind(name: &str) -> Kind {
     let n = name.to_lowercase();
-    let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
-    if has(&["zoom", "facetime", "discord", "teams", "webex", "skype", "whatsapp", "slack", "signal", "telegram", "gotomeeting", "around", "tuple"]) {
+    if ["zoom", "facetime", "discord", "teams", "webex", "skype", "whatsapp", "slack", "signal", "telegram", "gotomeeting", "tuple"].iter().any(|w| n.contains(w)) {
         Kind::Call
     } else if n == "spotify" || n == "music" {
         Kind::Scriptable
-    } else if has(&["brave", "chrome", "chromium", "arc", "edge", "vivaldi", "opera"]) {
-        Kind::Chromium
-    } else if n == "tv" || has(&["safari", "firefox", "vlc", "iina", "quicktime", "podcasts", "tidal", "deezer", "youtube", "audible", "plexamp", "infuse", "mpv", "elmedia", "soundcloud", "pandora", "amazon music"]) {
-        Kind::Player
     } else {
         Kind::Other
     }
 }
 
+fn osascript(script: &str) -> Result<String, String> {
+    crate::mac_control::run_timed("/usr/bin/osascript", &["-e", script], 3)
+}
+
+/// Whether an app is open (asking a closed app for its state would launch it).
+fn running(app: &str) -> bool {
+    std::process::Command::new("/usr/bin/pgrep").args(["-xq", app]).status().map(|s| s.success()).unwrap_or(false)
+}
+
+fn playing_names_all() -> Vec<String> {
+    playing_pids().into_iter().map(app_name).filter(|n| !n.is_empty()).collect()
+}
+
 fn player_state(app: &str) -> String {
-    crate::mac_control::run_timed("/usr/bin/osascript", &["-e", &format!("tell application \"{app}\" to player state as string")], 3).unwrap_or_default()
+    if !running(app) {
+        return String::new();
+    }
+    osascript(&format!("tell application \"{app}\" to player state as string")).unwrap_or_default()
+}
+
+fn sorted(now: Option<NowPlaying>, sounding: Vec<String>) -> MediaNow {
+    let mut out = MediaNow::default();
+    match &now {
+        Some(np) if np.playing && !np.app.is_empty() && kind(&np.app) != Kind::Call => out.music.push(np.app.clone()),
+        Some(_) => {}
+        None => {
+            for app in ["Spotify", "Music"] {
+                if player_state(app).contains("playing") {
+                    out.music.push(app.into());
+                }
+            }
+        }
+    }
+    for name in sounding {
+        let list = if kind(&name) == Kind::Call { &mut out.calls } else { &mut out.other };
+        if !out.music.contains(&name) && !list.contains(&name) {
+            list.push(name);
+        }
+    }
+    out
 }
 
 /// Sorts what's making sound into music E.V can pause, calls it mustn't talk over, and the rest.
 #[tauri::command]
 pub async fn media_now() -> MediaNow {
-    tokio::task::spawn_blocking(|| {
-        let mut now = MediaNow::default();
-        for pid in playing_pids() {
-            let name = app_name(pid);
-            if name.is_empty() {
-                continue;
-            }
-            let list = match kind(&name) {
-                Kind::Call => &mut now.calls,
-                Kind::Scriptable if player_state(&name).contains("playing") => &mut now.music,
-                Kind::Chromium if crate::mac_control::browser_tab_playing(pid) == Some(true) => &mut now.music,
-                Kind::Player => &mut now.music,
-                _ => &mut now.other,
-            };
-            if !list.contains(&name) {
-                list.push(name);
-            }
-        }
-        now
-    })
-    .await
-    .unwrap_or_default()
+    tokio::task::spawn_blocking(|| sorted(now_playing(), playing_names_all())).await.unwrap_or_default()
 }
 
-/// Pauses what `media_now` found playing. Returns what it paused, for `media_resume`: Spotify and
-/// Music by name, everything else with one press of the play/pause key ("key").
+/// Waits up to ~1.5 s for Now Playing to report `playing`.
+fn settles(playing: bool) -> bool {
+    for _ in 0..6 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if now_playing().map(|n| n.playing) == Some(playing) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Pauses what `media_now` found playing and checks that it stopped. Returns what it paused, for
+/// `media_resume`: Spotify and Music by name, anything else as "key" (the play/pause key, pressed
+/// only while Now Playing says something is playing).
 #[tauri::command]
 pub async fn media_pause(music: Vec<String>) -> Vec<String> {
     tokio::task::spawn_blocking(move || {
         let mut paused = Vec::new();
         for name in music {
             if kind(&name) == Kind::Scriptable {
-                if player_state(&name).contains("playing") && crate::mac_control::run_timed("/usr/bin/osascript", &["-e", &format!("tell application \"{name}\" to pause")], 3).is_ok() {
+                if player_state(&name).contains("playing") && osascript(&format!("tell application \"{name}\" to pause")).is_ok() {
                     paused.push(name);
                 }
-            } else if !paused.iter().any(|p| p == "key") && crate::mac_control::media_key("playpause").is_ok() {
-                paused.push("key".into());
+            } else if !paused.iter().any(|p| p == "key") && now_playing().map(|n| n.playing) == Some(true) && crate::mac_control::media_key("playpause").is_ok() {
+                if settles(false) {
+                    paused.push("key".into());
+                } else {
+                    // It didn't stop: press again so whatever the key did is undone, and talk over it.
+                    let _ = crate::mac_control::media_key("playpause");
+                }
             }
         }
         paused
@@ -194,15 +246,18 @@ pub async fn media_pause(music: Vec<String>) -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// Resumes exactly what `media_pause` paused — nothing else.
+/// Resumes exactly what `media_pause` paused — and only if it's still paused (you may have
+/// started something yourself meanwhile).
 #[tauri::command]
 pub async fn media_resume(paused: Vec<String>) {
     let _ = tokio::task::spawn_blocking(move || {
         for name in paused {
             if name == "key" {
-                let _ = crate::mac_control::media_key("playpause");
+                if now_playing().map(|n| n.playing) == Some(false) {
+                    let _ = crate::mac_control::media_key("playpause");
+                }
             } else if kind(&name) == Kind::Scriptable && player_state(&name).contains("paused") {
-                let _ = crate::mac_control::run_timed("/usr/bin/osascript", &["-e", &format!("tell application \"{name}\" to play")], 3);
+                let _ = osascript(&format!("tell application \"{name}\" to play"));
             }
         }
     })
@@ -213,16 +268,36 @@ pub async fn media_resume(paused: Vec<String>) {
 mod tests {
     use super::*;
 
+    fn np(playing: bool, app: &str) -> Option<NowPlaying> {
+        Some(NowPlaying { playing, pid: 1, app: app.into() })
+    }
+
     #[test]
     fn sorts_sound_sources() {
         assert_eq!(kind("FineTune"), Kind::Other);
-        assert_eq!(kind("SoundSource"), Kind::Other);
         assert_eq!(kind("Spotify"), Kind::Scriptable);
-        assert_eq!(kind("Music"), Kind::Scriptable);
-        assert_eq!(kind("Brave Browser"), Kind::Chromium);
-        assert_eq!(kind("Google Chrome"), Kind::Chromium);
-        assert_eq!(kind("Safari"), Kind::Player);
         assert_eq!(kind("zoom.us"), Kind::Call);
         assert_eq!(kind("FaceTime"), Kind::Call);
+    }
+
+    #[test]
+    fn only_now_playing_counts_as_music() {
+        let fine = || vec!["FineTune".to_string(), "Brave Browser".to_string()];
+        let playing = sorted(np(true, "Brave Browser"), fine());
+        assert_eq!(playing.music, vec!["Brave Browser"]);
+        assert_eq!(playing.other, vec!["FineTune"]);
+        let paused = sorted(np(false, "Brave Browser"), fine());
+        assert!(paused.music.is_empty());
+        assert_eq!(paused.other, vec!["FineTune", "Brave Browser"]);
+        let call = sorted(np(false, "Spotify"), vec!["zoom.us".into()]);
+        assert_eq!(call.calls, vec!["zoom.us"]);
+    }
+
+    #[test]
+    fn reads_now_playing() {
+        // The real Mac: just checks the reader answers (playing or not).
+        if let Some(now) = now_playing() {
+            println!("now playing: {now:?}");
+        }
     }
 }

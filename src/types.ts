@@ -262,7 +262,7 @@ export interface Settings {
     replies: {
       /** Typed requests: answer silently (text) or out loud too. */
       typed: "silent" | "speak";
-      /** Spoken tasks while music plays ("skip", "repeat this"): a quick notch line, or out loud. */
+      /** Spoken commands ("next song", "pause"): chime + notch line, or out loud. (Name kept for saved settings.) */
       tasksOverMusic: "notch" | "speak";
       /** Reminders, approvals, failed tasks: always out loud (plus notch), or notch only. */
       important: "speak" | "notch";
