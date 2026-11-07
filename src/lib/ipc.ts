@@ -569,6 +569,12 @@ export const notchMessage = (event: "listening" | "heard" | "say" | "waiting" | 
   invoke<boolean>("notch_message", { event, text, seconds: seconds ?? null });
 /** Apps playing sound right now (E.V itself left out). */
 export const audioPlaying = () => invoke<string[]>("audio_playing");
+/** What the sound on the Mac is: music E.V can pause, a call it mustn't talk over, or sound it ignores. */
+export type MediaNow = { music: string[]; calls: string[]; other: string[] };
+export const mediaNow = () => invoke<MediaNow>("media_now");
+/** Pauses that music; returns what was paused, for mediaResume. */
+export const mediaPause = (music: string[]) => invoke<string[]>("media_pause", { music });
+export const mediaResume = (paused: string[]) => invoke<void>("media_resume", { paused });
 export const approvalPopup = (show: boolean, height?: number) => invoke<void>("approval_popup", { show, height: height ?? null });
 export const approvalPopupReturn = () => invoke<void>("approval_popup_return");
 export const panelShow = (show: boolean) => invoke<void>("panel_show", { show });

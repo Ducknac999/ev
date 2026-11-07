@@ -1713,7 +1713,7 @@ pub fn money_blocked(target: &str) -> bool {
 
 const MONEY_REFUSAL: &str = "NEVER:money — E.V never does anything involving money. Tell the user what to do themselves.";
 
-fn run_timed(program: &str, args: &[&str], seconds: u64) -> Result<String, String> {
+pub(crate) fn run_timed(program: &str, args: &[&str], seconds: u64) -> Result<String, String> {
     let mut child = std::process::Command::new(program)
         .args(args)
         .stdout(std::process::Stdio::piped())
@@ -1999,6 +1999,46 @@ pub fn capture_report(app: &str) -> String {
         }
     }
     format!("window_id={id:?}\nminimized={minimized:?}\napp_hidden={hidden:?}\n{}\nframe={:?}\n", lines.join("\n"), window.frame())
+}
+
+// ── Browser audio ─────────────────────────────────────────────────────────────
+
+/// Whether one of a Chromium browser's tabs (Brave, Chrome, Arc, Edge, Vivaldi, Opera) is marked
+/// "Audio playing" — the tab strip tells Accessibility so. A browser keeps its sound output open for
+/// a while after a video or song is paused, so that alone doesn't mean anything is playing.
+/// None when E.V can't tell (no Accessibility permission, or a window without tabs).
+pub(crate) fn browser_tab_playing(pid: i32) -> Option<bool> {
+    if !accessibility_granted() {
+        return None;
+    }
+    let app = Element::app(pid)?;
+    let windows: Vec<Element> = app
+        .attr("AXWindows")
+        .and_then(|v| v.downcast::<CFArray>())
+        .map(|arr| arr.iter().filter(|p| !p.is_null()).map(|p| Element(unsafe { CFType::wrap_under_get_rule(*p as CFTypeRef) })).collect())
+        .unwrap_or_default();
+    fn walk(el: &Element, depth: usize, seen: &mut usize, tabs: &mut usize) -> bool {
+        if depth > 20 || *seen > 5000 {
+            return false;
+        }
+        *seen += 1;
+        let role = el.string("AXRole");
+        if role == "AXWebArea" {
+            return false;
+        }
+        if role == "AXRadioButton" || role == "AXTab" {
+            *tabs += 1;
+            if el.label().to_lowercase().contains("audio playing") {
+                return true;
+            }
+        }
+        el.children().iter().any(|child| walk(child, depth + 1, seen, tabs))
+    }
+    let (mut seen, mut tabs) = (0, 0);
+    if windows.iter().any(|w| walk(w, 0, &mut seen, &mut tabs)) {
+        return Some(true);
+    }
+    (tabs > 0).then_some(false)
 }
 
 // ── Notch check (diagnostic) ──────────────────────────────────────────────────

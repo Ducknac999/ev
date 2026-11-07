@@ -1,5 +1,5 @@
 import { speechQueue } from "../audio/speech";
-import { audioPlaying, macMedia, notchMessage } from "../lib/ipc";
+import { mediaNow, mediaPause, mediaResume, notchMessage, type MediaNow } from "../lib/ipc";
 import { uid } from "../lib/ids";
 import { useVoice } from "../store/voice";
 import { panelShowing } from "./quickPanel";
@@ -9,7 +9,8 @@ import { useSettings } from "../store/settings";
 /**
  * How E.V answers a spoken request (Hey E.V or hold to talk), like a person would:
  * - You asked something ("what's…", "how many…"): it's said out loud. Music is paused for it and
- *   comes back after. Sound that can't be paused (a call, a game) is never talked over: notch.
+ *   comes back after. A call or meeting is never talked over: notch. Other sound (audio tools like
+ *   FineTune, a paused browser tab, system sounds) doesn't count as music.
  * - You told it to do something ("repeat this song"): the confirmation shows in the Vorssaint notch
  *   and the music keeps playing. With nothing playing it's simply said.
  * - "…out loud" / "tell me" in the request → spoken; "…quietly" / "just text me" → notch.
@@ -21,9 +22,6 @@ import { useSettings } from "../store/settings";
 
 /** "quiet": never spoken, only shown in the notch (hold to talk with "Speak the answer" off). */
 export type AnnounceMode = "hold" | "talk" | "quiet";
-
-/** Apps E.V can pause and resume with play/pause. */
-const PAUSABLE = /spotify|music|brave|chrome|safari|arc|vivaldi|edge|firefox|opera|youtube|tidal|deezer|vlc|iina|quicktime|podcasts|tv/i;
 
 /** "Next song.", "Paused.", "Added Seasick to Beast." — not a question, short enough to glance at. */
 export function isConfirmation(text: string): boolean {
@@ -71,22 +69,37 @@ function onScreen(chatId?: string): boolean {
   return document.hasFocus() || (chatId ? panelShowing(chatId) : false);
 }
 
-/** Says it, pausing what's playing first and resuming after. Unpausable sound: notch instead. */
-async function speakOverMusic(text: string, playing: string[], label?: string): Promise<void> {
-  if (!playing.length) {
+const NOTHING: MediaNow = { music: [], calls: [], other: [] };
+
+async function whatsPlaying(): Promise<MediaNow> {
+  return mediaNow().catch(() => NOTHING);
+}
+
+/** How a spoken answer actually went — the note under the answer is written from this. */
+type Outcome = "spoken" | "paused" | "call";
+
+/**
+ * Says it. Music that's really playing is paused first and resumed after (only what E.V paused).
+ * On a call it goes to the notch instead (said anyway if the notch isn't there).
+ */
+async function speakOverMusic(text: string, now: MediaNow, label?: string): Promise<Outcome> {
+  if (now.calls.length) {
+    if (await notch(text)) {
+      last = { text, label, at: Date.now(), spoken: false };
+      return "call";
+    }
     speak(text, label);
-    return;
+    return "spoken";
   }
-  if (!playing.every((app) => PAUSABLE.test(app))) {
-    if (!(await notch(text))) speak(text, label);
-    else last = { text, label, at: Date.now(), spoken: false };
-    return;
+  if (!now.music.length) {
+    speak(text, label);
+    return "spoken";
   }
-  const paused = await macMedia("pause").catch(() => "");
-  const wePaused = paused !== "" && !/already/i.test(paused);
+  const paused = await mediaPause(now.music).catch(() => [] as string[]);
   speak(text, label);
   await spoken();
-  if (wePaused) await macMedia(/toggled/i.test(paused) ? "playpause" : "play").catch(() => {});
+  if (paused.length) await mediaResume(paused).catch(() => {});
+  return paused.length ? "paused" : "spoken";
 }
 
 /**
@@ -116,18 +129,24 @@ export async function announce(text: string, mode: AnnounceMode, label?: string,
     else last = { text: said, label, at: Date.now(), spoken: false };
     return { spoken: false, note: "🔇 Not spoken: you asked for it quietly" };
   }
-  const playing = await audioPlaying().catch(() => [] as string[]);
+  const now = await whatsPlaying();
+  const music = now.music.join(", ");
   const kind = requestKind(request);
   const isTask = kind === "task" || (kind === "unclear" && isConfirmation(said));
   const tasksOverMusic = useSettings.getState().settings.voice.replies.tasksOverMusic;
-  if (override !== "speak" && playing.length > 0 && isTask && tasksOverMusic === "notch") {
-    if (!(await notch(said))) speak(said, label);
-    else last = { text: said, label, at: Date.now(), spoken: false };
-    return { spoken: false, note: "🔇 Shown in the notch: a task while music plays" };
+  if (override !== "speak" && now.music.length > 0 && isTask && tasksOverMusic === "notch") {
+    if (await notch(said)) {
+      last = { text: said, label, at: Date.now(), spoken: false };
+      return { spoken: false, note: `🔇 Shown in the notch: a task while ${music} plays` };
+    }
+    speak(said, label);
+    return { spoken: true, note: "🔈 Spoken: the notch isn't running" };
   }
-  if (!onScreen(chatId)) void notch(said);
-  await speakOverMusic(said, playing, label);
-  return { spoken: true, note: override === "speak" ? "🔈 Spoken: you asked for it out loud" : playing.length ? "🔈 Spoken (music paused): you asked by voice" : "🔈 Spoken: you asked by voice" };
+  if (!now.calls.length && !onScreen(chatId)) void notch(said);
+  const outcome = await speakOverMusic(said, now, label);
+  if (outcome === "call") return { spoken: false, note: `🔇 Not spoken: you're on a call (${now.calls.join(", ")}), shown in the notch` };
+  const why = override === "speak" ? "you asked for it out loud" : "you asked by voice";
+  return { spoken: true, note: outcome === "paused" ? `🔈 Spoken (${music} paused): ${why}` : `🔈 Spoken: ${why}` };
 }
 
 /** Options for a typed request: silent, unless it says "…out loud" or Settings speaks typed replies. */
@@ -146,12 +165,12 @@ export async function announceImportant(text: string): Promise<void> {
   if (!said) return;
   const toNotch = useVoice.getState().muted || useSettings.getState().settings.voice.replies.important === "notch";
   void notch(said);
-  if (toNotch) {
+  const now = toNotch ? NOTHING : await whatsPlaying();
+  if (toNotch || now.calls.length) {
     void playChime();
     return;
   }
-  const playing = await audioPlaying().catch(() => [] as string[]);
-  await speakOverMusic(said, playing);
+  await speakOverMusic(said, now);
 }
 
 /** A short system sound for alerts that aren't spoken. */
@@ -184,9 +203,7 @@ const SAY_THAT = /^\s*(?:(?:say|read)\s+(?:that|it)(?:\s+again)?(?:\s+out\s+loud
 export function sayLastIfAsked(text: string): boolean {
   if (!SAY_THAT.test(text) || !last || Date.now() - last.at > 10 * 60_000) return false;
   const { text: said, label } = last;
-  void audioPlaying()
-    .catch(() => [] as string[])
-    .then((playing) => speakOverMusic(said, playing, label));
+  void whatsPlaying().then((now) => speakOverMusic(said, now, label));
   return true;
 }
 
