@@ -28,21 +28,21 @@ pub(crate) fn app() -> Option<&'static AppHandle> {
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
-struct Point {
-    x: f64,
-    y: f64,
+pub(crate) struct Point {
+    pub x: f64,
+    pub y: f64,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
-struct Size {
-    w: f64,
-    h: f64,
+pub(crate) struct Size {
+    pub w: f64,
+    pub h: f64,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
-struct Rect {
-    origin: Point,
-    size: Size,
+pub(crate) struct Rect {
+    pub origin: Point,
+    pub size: Size,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
@@ -127,7 +127,6 @@ fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
         .transparent(true)
         .shadow(false)
         .resizable(false)
-        .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)
         .focused(false)
@@ -156,7 +155,20 @@ fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
 }
 
 /// Top center of the notch's screen, `width` × `height` points, growing downward.
+/// Over the menu bar: set again after anything that may reset it (showing the window).
+fn lift(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Ok(ns_window) = window.ns_window() {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        unsafe {
+            let _: () = msg_send![ns_window as *mut AnyObject, setLevel: LEVEL];
+        }
+    }
+}
+
 fn place(window: &tauri::WebviewWindow, width: f64, height: f64) {
+    lift(window);
     let (frame, _, _, _, primary_h) = screen();
     let x = frame.origin.x + (frame.size.w - width) / 2.0;
     let y = frame.origin.y + frame.size.h - height;
@@ -185,6 +197,10 @@ fn show(app: &AppHandle, on: bool) -> Result<(), String> {
             }
         }
         let _ = window.show();
+        // Showing resets the level, and macOS keeps normal windows below the menu bar: put it back.
+        let (_, _, w, h) = *RECT.lock().unwrap();
+        let (_, nw, nh, _, _) = screen();
+        place(&window, if w > 0.0 { w } else { nw }, if h > 0.0 { h } else { nh });
     } else if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.close();
     }

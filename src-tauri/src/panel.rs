@@ -108,6 +108,11 @@ pub(crate) unsafe fn make_panel(ns_window: *mut std::ffi::c_void, level: isize) 
             Bool::NO
         }
         builder.add_method(sel!(canBecomeKeyWindow), yes as extern "C-unwind" fn(_, _) -> _);
+        // Where E.V puts it is where it goes (macOS would push the notch below the menu bar).
+        extern "C-unwind" fn keep(_: &AnyObject, _: Sel, rect: crate::notch_window::Rect, _screen: *mut AnyObject) -> crate::notch_window::Rect {
+            rect
+        }
+        builder.add_method(sel!(constrainFrameRect:toScreen:), keep as extern "C-unwind" fn(_, _, _, _) -> _);
         builder.add_method(sel!(canBecomeMainWindow), no as extern "C-unwind" fn(_, _) -> _);
         builder.register() as *const AnyClass as usize
     });
