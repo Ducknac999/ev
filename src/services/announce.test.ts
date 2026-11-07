@@ -94,3 +94,11 @@ describe("the talking rule", () => {
     expect(why.note).toContain("call (zoom.us)");
   });
 });
+
+describe("questions with a greeting in front", () => {
+  it("are answered out loud, not treated as a command", async () => {
+    const { requestKind } = await import("./requestKind");
+    expect(requestKind("Hello, what is um today's um time")).toBe("question");
+    expect(requestKind("ok so next song")).toBe("task");
+  });
+});

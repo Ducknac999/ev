@@ -136,7 +136,8 @@ export async function announce(text: string, mode: AnnounceMode, label?: string,
   const music = now.music.join(", ");
   const kind = requestKind(request);
   // A command's short confirmation ("Next song.") — not an answer worth hearing ("look up the weather").
-  const isTask = kind !== "question" && isConfirmation(said);
+  // Only a clear command ("next song", "open Spotify") gets the chime: anything unclear is answered out loud.
+  const isTask = kind === "task" && isConfirmation(said);
   const tasks = useSettings.getState().settings.voice.replies.tasksOverMusic;
   if (override !== "speak" && isTask && tasks === "notch") {
     if (await notch(said)) {

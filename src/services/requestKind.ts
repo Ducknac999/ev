@@ -5,7 +5,7 @@
  */
 
 /** "Hey E.V, can you please …", "I want you to …", "go and …" — the polite start before the verb. */
-const LEAD = /^(?:(?:hey\s+)?(?:e\.?\s?v\.?|evie|eevee)[,.!\s]+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+|(?:i\s+)?(?:want|need)\s+you\s+to\s+|go\s+(?:ahead\s+and\s+|and\s+)?|let'?s\s+|now\s+|and\s+|then\s+|also\s+)*/i;
+const LEAD = /^(?:(?:hello|hi|hey|yo|ok(?:ay)?|so|um+|uh+|well)[,.!\s]+)*(?:(?:hey\s+)?(?:e\.?\s?v\.?|evie|eevee)[,.!\s]+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+|(?:i\s+)?(?:want|need)\s+you\s+to\s+|go\s+(?:ahead\s+and\s+|and\s+)?|let'?s\s+|now\s+|and\s+|then\s+|also\s+)*/i;
 
 const TASK =
   /^(?:open|close|quit|play|pause|resume|stop|skip|next|previous|repeat|shuffle|loop|add|remove|delete|put|save|send|text|message|email|reply|call|turn|switch|set|change|make|create|write|draft|move|copy|rename|download|upload|install|click|press|type|scroll|navigate|start|launch|run|mute|unmute|raise|lower|increase|decrease|like|unlike|subscribe|book|order|schedule|remind|fix|clean|sort|organi[sz]e|empty|lock|minimi[sz]e|maximi[sz]e|hide|bring|go\s+(?:to|back|forward)|search\s+for|look\s+up|find\s+and|take\s+a|full\s*screen)\b/i;

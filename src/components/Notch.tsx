@@ -370,7 +370,8 @@ export function Notch() {
         }}
       >
         <div className="notch-top" style={{ height: geo.height }}>
-          {mode !== "idle" && (
+          {/* Open, the music card shows the song: the small cover beside the notch would be a second one. */}
+          {(mode === "wings" || mode === "bubble") && (
             <>
               <div className="notch-wing left">
                 {voice?.kind === "listening" ? (
