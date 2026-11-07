@@ -49,12 +49,12 @@ pub async fn route_prewarm() -> bool {
 #[cfg(test)]
 mod bench {
     /// `cargo test --lib router -- --ignored --nocapture`: the router on every phrase in
-    /// tests/router-phrases.json, with the real on-device model. Prints the score.
+    /// src/services/routerPhrases.json, with the real on-device model. Prints the score.
     #[test]
     #[ignore]
     fn score() {
         let tools: serde_json::Value = serde_json::from_str(include_str!("../../src/services/routerTools.json")).unwrap();
-        let phrases: Vec<(String, String)> = serde_json::from_str(include_str!("../tests/router-phrases.json")).unwrap();
+        let phrases: Vec<(String, String)> = serde_json::from_str(include_str!("../../src/services/routerPhrases.json")).unwrap();
         let (route, free, warm) = super::lib().expect("helper library");
         unsafe { warm() };
         let (mut ok, mut wrong, mut missed, mut ms) = (0, 0, 0, 0u64);

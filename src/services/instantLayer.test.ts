@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/event", () => ({ emitTo: async () => {} }));
 const { parseQuickCommand } = await import("./quickCommands");
-const phrases = (await import("../../src-tauri/tests/router-phrases.json")).default as [string, string][];
+const phrases = (await import("./routerPhrases.json")).default as [string, string][];
 
 const KIND: Record<string, string> = { media: "media", volume: "volume", mute: "volume", dark: "dark_mode", open: "open_app", findFile: "find_file", math: "calculate" };
 
