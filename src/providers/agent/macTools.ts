@@ -8,6 +8,8 @@ import {
   macKey,
   macLook,
   macMedia,
+  findMyFiles,
+  fileOpen,
   macOpen,
   macQuit,
   macScreen,
@@ -194,6 +196,19 @@ export const MAC_TOOL_DEFINITIONS: ToolDefinition[] = [
         dy: { type: "integer", description: "Lines down (negative = up)" },
         dx: { type: "integer", description: "Lines right (negative = left)" },
       },
+    },
+  },
+  {
+    name: "find_my_file",
+    description:
+      "Find the user's own files with Spotlight in one step, ranked (name match, recently used, their folders first). Words narrow it: 'latest', 'pdf', 'in Downloads', 'from last week'. Use this before browsing folders; open = true opens the best match when it's clear.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What they asked for, e.g. 'my latest resume pdf'" },
+        open: { type: "boolean", description: "Open it if one result is clearly the one" },
+      },
+      required: ["query"],
     },
   },
   {
@@ -614,6 +629,16 @@ export async function executeMacTool(name: string, args: Record<string, unknown>
           ok: true,
         };
       }
+      case "find_my_file": {
+        const found = await findMyFiles(str(args.query));
+        if (found.empty || !found.results.length) return { output: `Spotlight found nothing for “${str(args.query)}”.`, display: "No match", ok: true };
+        if (args.open === true && found.clear) {
+          await fileOpen(found.results[0].path);
+          return { output: `Opened ${found.results[0].path}.`, display: `Opened ${found.results[0].name}`, ok: true, confirmed: true };
+        }
+        const lines = found.results.map((r, i) => `${i + 1}. ${r.path}${r.when ? ` (${r.when})` : ""}${r.named ? "" : " [only mentions it]"}`);
+        return { output: `${found.clear ? "Clear best match first." : "No single clear match; ask which one if it matters."}\n${lines.join("\n")}`, display: `${found.results.length} files`, ok: true };
+      }
       case "mac_media":
         await macMedia(str(args.action));
         return { output: `Pressed ${str(args.action)}.`, display: str(args.action), ok: true, confirmed: true, replay: [{ tool: "mac_media", args: { action: args.action } }] };
@@ -706,6 +731,8 @@ export function describeMacTool(name: string, args: Record<string, unknown>): st
       return `Press ${[...(Array.isArray(args.modifiers) ? args.modifiers.map(str) : []), str(args.key)].join("+")}`;
     case "mac_scroll":
       return "Scroll";
+    case "find_my_file":
+      return args.open === true ? `Find and open “${str(args.query)}”` : `Find “${str(args.query)}”`;
     case "mac_media":
       return { playpause: "Play / pause", next: "Next track", previous: "Previous track" }[str(args.action)] ?? "Media key";
     case "mac_system":

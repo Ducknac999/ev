@@ -115,19 +115,57 @@ pub struct NowPlaying {
     pub app: String,
 }
 
-const LOADER: &str = r#"use DynaLoader; my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 2; my $s = DynaLoader::dl_find_symbol($h, "ev_nowplaying_get") or exit 3; DynaLoader::dl_install_xsub("main::get", $s); main::get();"#;
+const LOADER: &str = r#"use DynaLoader; my $h = DynaLoader::dl_load_file($ARGV[0], 0) or exit 2; my $s = DynaLoader::dl_find_symbol($h, $ARGV[1]) or exit 3; DynaLoader::dl_install_xsub("main::get", $s); main::get();"#;
+
+/// Runs one of the helper library's Now Playing functions inside /usr/bin/perl; its JSON line.
+fn read_now_playing(symbol: &str, artwork: bool) -> Option<String> {
+    let lib = crate::doc::lib_path()?;
+    let mut child = std::process::Command::new("/usr/bin/perl");
+    child.args(["-e", LOADER, &lib.display().to_string(), symbol]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+    if artwork {
+        child.env("EV_NP_ARTWORK", "1");
+    }
+    let mut child = child.spawn().ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    while child.try_wait().ok()?.is_none() {
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let out = child.wait_with_output().ok()?;
+    String::from_utf8(out.stdout).ok()?.lines().last().map(str::to_string)
+}
 
 /// None when Now Playing can't be read (a future macOS may block it): E.V then falls back to
 /// asking Spotify and Music directly, and never presses play/pause on a guess.
 pub fn now_playing() -> Option<NowPlaying> {
-    let lib = crate::doc::lib_path()?;
-    let out = crate::mac_control::run_timed("/usr/bin/perl", &["-e", LOADER, &lib.display().to_string()], 4).ok()?;
-    let mut now: NowPlaying = serde_json::from_str(out.lines().last()?).ok()?;
+    let mut now: NowPlaying = serde_json::from_str(&read_now_playing("ev_nowplaying_get", false)?).ok()?;
     // E.V's own voice never counts.
     if now.pid == std::process::id() as i32 {
         now.playing = false;
     }
     Some(now)
+}
+
+/// The song for the notch's music card (title, artist, position…), as Now Playing reports it.
+/// `artwork`: include the cover (base64) — asked once per song.
+#[tauri::command]
+pub async fn now_playing_info(artwork: Option<bool>) -> Option<serde_json::Value> {
+    tokio::task::spawn_blocking(move || {
+        let mut value: serde_json::Value = serde_json::from_str(&read_now_playing("ev_nowplaying_info", artwork.unwrap_or(false))?).ok()?;
+        if value.get("pid").and_then(|p| p.as_i64()) == Some(std::process::id() as i64) {
+            return None;
+        }
+        value.get("error").is_none().then(|| {
+            value["fetchedAt"] = serde_json::json!(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0));
+            value
+        })
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// What the sound on the Mac actually is, so E.V knows whether to pause it, stay quiet, or just talk.

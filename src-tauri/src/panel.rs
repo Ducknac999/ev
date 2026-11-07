@@ -85,6 +85,12 @@ pub(crate) fn show(app: &AppHandle, on: bool) -> Result<(), String> {
 /// them, stays where tao expects it.
 #[cfg(target_os = "macos")]
 unsafe fn make_floating_panel(ns_window: *mut std::ffi::c_void) {
+    make_panel(ns_window, 3);
+}
+
+/// `level`: 3 floats over apps (the quick panel); 27 sits over the menu bar (the notch).
+#[cfg(target_os = "macos")]
+pub(crate) unsafe fn make_panel(ns_window: *mut std::ffi::c_void, level: isize) {
     use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
     use objc2::{msg_send, sel};
     use std::sync::OnceLock;
@@ -120,15 +126,14 @@ unsafe fn make_floating_panel(ns_window: *mut std::ffi::c_void) {
     const FULL_SCREEN_AUXILIARY: usize = 1 << 8;
     let _: () = msg_send![window, setCollectionBehavior: CAN_JOIN_ALL_SPACES | IGNORES_CYCLE | FULL_SCREEN_AUXILIARY];
 
-    const FLOATING_LEVEL: isize = 3;
-    let _: () = msg_send![window, setLevel: FLOATING_LEVEL];
+    let _: () = msg_send![window, setLevel: level];
     let _: () = msg_send![window, setFloatingPanel: true];
     let _: () = msg_send![window, setHidesOnDeactivate: false];
     let _: () = msg_send![window, setBecomesKeyOnlyIfNeeded: false];
 }
 
 #[cfg(target_os = "macos")]
-unsafe fn take_keyboard(ns_window: *mut std::ffi::c_void) {
+pub(crate) unsafe fn take_keyboard(ns_window: *mut std::ffi::c_void) {
     use objc2::msg_send;
     use objc2::runtime::AnyObject;
     let window = ns_window as *mut AnyObject;
@@ -138,6 +143,11 @@ unsafe fn take_keyboard(ns_window: *mut std::ffi::c_void) {
 
 /// The panel shortcut was pressed: open it, or close it if it's open.
 pub(crate) fn toggle(app: &AppHandle) {
+    // With the E.V notch on, the shortcut opens its mini chat instead.
+    if crate::notch_window::active() {
+        crate::notch_window::open_chat(app);
+        return;
+    }
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         let _ = show(&app, !visible(&app));

@@ -7,7 +7,7 @@ import type { ToolDefinition } from "./tools";
  * what it loaded, so its list stays the same from call to call and the provider's cache covers it.
  */
 
-export const CORE_TOOLS = new Set(["mac_open", "mac_look", "mac_click", "mac_type", "mac_key", "mac_tabs", "mac_scroll", "mac_front", "mac_media", "web_search", "web_fetch"]);
+export const CORE_TOOLS = new Set(["mac_open", "mac_look", "mac_click", "mac_type", "mac_key", "mac_tabs", "mac_scroll", "mac_front", "mac_media", "find_my_file", "web_search", "web_fetch"]);
 
 export type ToolGroup = "basics" | "browser" | "files" | "documents" | "facts" | "schedule" | "plan" | "mac_more";
 

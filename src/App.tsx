@@ -1,3 +1,4 @@
+import { startNotch } from "./services/notchBridge";
 import { useCallback, useEffect, useState } from "react";
 import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
@@ -230,6 +231,7 @@ export default function App() {
     startHoldToTalk();
     startApprovalPopup();
     startQuickPanel();
+    startNotch();
     void refreshBalance(true);
   }, [loaded]);
 

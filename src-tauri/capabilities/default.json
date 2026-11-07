@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "approve",
-    "panel"
+    "panel",
+    "notch"
   ],
   "permissions": [
     "core:default",

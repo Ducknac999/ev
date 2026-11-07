@@ -1762,3 +1762,115 @@ body { background-color: var(--bg); font-size: 13.5px; }
 .settings-card dl.shortcut-list > div { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
 .settings-card dl.shortcut-list dt { color: var(--text-2); }
 .settings-card dl.shortcut-list dd { margin: 0; text-align: right; }
+
+/* ── The E.V notch (components/Notch.tsx) ─────────────────────────────────── */
+html.notch-root,
+html.notch-root body,
+html.notch-root #root {
+  background: transparent !important;
+  overflow: hidden;
+  margin: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.notch-stage { position: fixed; inset: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+.notch-shape {
+  pointer-events: auto;
+  background: #000;
+  color: #f2f4f6;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.24s cubic-bezier(0.3, 0.9, 0.3, 1), height 0.24s cubic-bezier(0.3, 0.9, 0.3, 1), border-radius 0.24s;
+  font: 12px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0);
+}
+.notch-shape.mode-open, .notch-shape.mode-bubble { box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45); }
+.notch-shape.pill { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.notch-top { display: flex; align-items: center; justify-content: center; flex: none; }
+.notch-gap { flex: none; }
+.notch-wing { width: 46px; display: flex; align-items: center; justify-content: center; gap: 6px; animation: notch-fade 0.25s ease; }
+.notch-wing .talk-on { color: var(--neon); }
+.notch-art-mini { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
+.notch-cup { font-size: 12px; filter: saturate(0.9); }
+.notch-cup.lid { text-shadow: 0 0 6px rgba(var(--neon-rgb), 0.8); }
+.notch-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.notch-bars i { width: 2.5px; height: 4px; border-radius: 2px; background: var(--neon); opacity: 0.9; }
+.notch-bars.mic i { background: #fff; }
+.notch-bars.live i { animation: notch-bar 0.9s ease-in-out infinite; }
+.notch-bars.live i:nth-child(2) { animation-delay: 0.15s; }
+.notch-bars.live i:nth-child(3) { animation-delay: 0.3s; }
+.notch-bars.live i:nth-child(4) { animation-delay: 0.45s; }
+@keyframes notch-bar { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+@keyframes notch-fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.notch-content { padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 8px; animation: notch-fade 0.22s ease; }
+.notch-voice { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 13px; }
+.notch-voice .you { color: #fff; }
+.notch-voice .muted, .notch-muted { color: #9aa3ad; }
+.notch-voice .thinking { margin-left: auto; font-size: 11px; }
+.notch-voice.say span:last-child { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.notch-voice .tick { color: var(--neon); font-weight: 700; }
+.notch-card { display: flex; flex-direction: column; gap: 5px; background: #111316; border: 1px solid #1f2328; border-radius: 12px; padding: 10px 11px; }
+.notch-card.approval { border-color: rgba(var(--neon-rgb), 0.35); }
+.notch-card-title { font-weight: 600; font-size: 13px; }
+.notch-card-sub { color: #8d96a1; font-size: 11px; }
+.notch-card-detail { color: #c5cbd2; white-space: pre-wrap; max-height: 66px; overflow: hidden; font-size: 11.5px; }
+.notch-buttons { display: flex; gap: 6px; margin-top: 4px; }
+.notch-buttons button, .notch-tabs button, .notch-link {
+  border: 1px solid #2a2f35; background: #16191d; color: #e6e9ec; border-radius: 8px; padding: 4px 10px; font: inherit; cursor: pointer;
+}
+.notch-buttons button.primary { background: var(--neon); border-color: var(--neon); color: #04110c; font-weight: 600; }
+.notch-hit { display: grid; grid-template-columns: 18px 1fr; grid-template-rows: auto auto; text-align: left; border: 0; background: transparent; color: inherit; padding: 4px 4px; border-radius: 8px; cursor: pointer; font: inherit; }
+.notch-hit:hover { background: #1a1d21; }
+.notch-hit .n { grid-row: span 2; color: var(--neon); font-weight: 700; }
+.notch-hit .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notch-hit .where { color: #8d96a1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notch-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.notch-tabs { display: flex; gap: 4px; }
+.notch-tabs button { padding: 3px 9px; background: transparent; border-color: transparent; color: #9aa3ad; }
+.notch-tabs button.on { background: #1a1d21; border-color: #2a2f35; color: #fff; }
+.notch-actions { display: flex; gap: 4px; }
+.notch-icon { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #aeb6bf; cursor: pointer; font-size: 13px; }
+.notch-icon:hover { background: #1a1d21; color: #fff; }
+.notch-icon.on { color: var(--neon); background: rgba(var(--neon-rgb), 0.12); border-color: rgba(var(--neon-rgb), 0.3); }
+.notch-icon.big { width: 32px; height: 32px; background: #1a1d21; color: #fff; }
+.notch-icon:disabled { opacity: 0.35; cursor: default; }
+.notch-note { color: var(--amber); font-size: 11px; }
+.notch-empty { color: #8d96a1; padding: 6px 2px; }
+.notch-chat { display: flex; flex-direction: column; gap: 8px; }
+.notch-messages { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+.notch-msg { padding: 6px 9px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: hidden; user-select: text; -webkit-user-select: text; }
+.notch-msg.user { align-self: flex-end; background: rgba(var(--neon-rgb), 0.14); max-width: 85%; }
+.notch-msg.assistant { background: #111316; }
+.notch-input { display: flex; align-items: flex-end; gap: 6px; background: #111316; border: 1px solid #23272c; border-radius: 12px; padding: 5px 5px 5px 10px; }
+.notch-input textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: #fff; font: inherit; font-size: 13px; max-height: 80px; padding: 4px 0; user-select: text; -webkit-user-select: text; }
+.notch-icon.send { color: var(--neon); }
+.notch-music { display: flex; flex-direction: column; gap: 10px; }
+.notch-song { display: flex; align-items: center; gap: 10px; }
+.notch-art { width: 54px; height: 54px; border-radius: 10px; object-fit: cover; flex: none; }
+.notch-art.blank { background: linear-gradient(135deg, #1a1d21, #0d0f11); }
+.notch-song-text { flex: 1; min-width: 0; }
+.notch-title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch-artist { color: #9aa3ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch-progress { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: #8d96a1; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.notch-progress .track { flex: 1; height: 3px; border-radius: 2px; background: #23272c; overflow: hidden; }
+.notch-progress .fill { height: 100%; background: #fff; transition: width 0.25s linear; }
+.notch-controls { display: flex; align-items: center; gap: 2px; }
+.notch-lyrics { text-align: center; display: flex; flex-direction: column; gap: 3px; padding: 2px 4px 2px; }
+.notch-lyrics .now { font-size: 14px; font-weight: 600; color: #fff; min-height: 19px; }
+.notch-lyrics .dim { color: #6f7781; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notch-lyrics.plain { white-space: pre-line; color: #aeb6bf; }
+.notch-shelf { display: flex; flex-direction: column; gap: 8px; }
+.notch-drop { border: 1.5px dashed #2f353c; border-radius: 12px; padding: 18px 12px; text-align: center; color: #9aa3ad; }
+.notch-shelf.dropping .notch-drop, .notch-shelf.dropping .notch-files { border-color: var(--neon); background: rgba(var(--neon-rgb), 0.06); }
+.notch-files { display: flex; flex-direction: column; gap: 3px; max-height: 210px; overflow-y: auto; border: 1.5px dashed transparent; border-radius: 12px; }
+.notch-file { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 9px; background: #111316; cursor: grab; }
+.notch-file:active { cursor: grabbing; }
+.notch-file .ext { flex: none; width: 34px; text-align: center; font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: var(--neon); background: rgba(var(--neon-rgb), 0.1); border-radius: 5px; padding: 2px 0; }
+.notch-file .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notch-file.missing { opacity: 0.5; cursor: default; }
+.notch-file .gone { color: var(--amber); font-size: 10.5px; }
+.notch-file .x { border: 0; background: transparent; color: #8d96a1; cursor: pointer; font-size: 14px; }
+.notch-file.all { justify-content: center; background: rgba(var(--neon-rgb), 0.12); color: var(--neon); font-weight: 600; flex: 1; }
+.notch-shelf-bar { display: flex; gap: 6px; align-items: center; }
+.settings-card h4.settings-sub { margin-top: 14px; font-size: 13px; }

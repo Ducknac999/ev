@@ -1,4 +1,5 @@
 import { macMedia, macOpen, macSystem } from "../lib/ipc";
+import { fileRequest, findFile, parsePick, pickFile } from "./filePicker";
 
 /**
  * Instant commands: simple Mac actions E.V does itself, with no AI call — as fast as the
@@ -11,7 +12,9 @@ export type QuickCommand =
   | { kind: "volume"; to?: number; by?: number }
   | { kind: "mute"; on: boolean }
   | { kind: "dark"; on: boolean }
-  | { kind: "open"; app: string };
+  | { kind: "open"; app: string }
+  | { kind: "findFile"; query: string }
+  | { kind: "pickFile"; index: number };
 
 const FILLER = /^(?:(?:ok(?:ay)?|hey|so|um+|uh+|yo)[,\s]+)*(?:(?:can|could|would|will)\s+you\s+|please\s+|just\s+|go\s+(?:ahead\s+and\s+)?)*/i;
 const TAIL = /[\s,]*(?:please|for\s+me|now|right\s+now|thanks?(?:\s+you)?)*[\s.!?]*$/i;
@@ -30,6 +33,10 @@ function percent(text: string): number | undefined {
 }
 
 export function parseQuickCommand(input: string): QuickCommand | null {
+  const index = parsePick(input);
+  if (index) return { kind: "pickFile", index };
+  const file = fileRequest(input);
+  if (file) return { kind: "findFile", query: file };
   const text = input.trim().replace(FILLER, "").replace(TAIL, "").trim().toLowerCase();
   if (!text || text.length > 60 || /\b(and|then|also|after|before|tell|send|message|search|find|why|what|how|who|when)\b/.test(text)) return null;
 
@@ -62,7 +69,7 @@ export function parseQuickCommand(input: string): QuickCommand | null {
 }
 
 /** Does it, and returns the short confirmation E.V says or shows. */
-export async function runQuickCommand(command: QuickCommand): Promise<string> {
+export async function runQuickCommand(command: QuickCommand): Promise<string | { text: string; spoken: string }> {
   switch (command.kind) {
     case "media": {
       const result = await macMedia(command.action);
@@ -89,5 +96,9 @@ export async function runQuickCommand(command: QuickCommand): Promise<string> {
     case "open":
       await macOpen(undefined, command.app);
       return `Opening ${command.app}.`;
+    case "findFile":
+      return findFile(command.query);
+    case "pickFile":
+      return pickFile(command.index);
   }
 }

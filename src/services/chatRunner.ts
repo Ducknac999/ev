@@ -382,13 +382,15 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   const quick = attachments ? null : parseQuickCommand(content);
   if (quick) {
     try {
-      const said = await runQuickCommand(quick);
+      const result = await runQuickCommand(quick);
+      const shown = typeof result === "string" ? result : result.text;
+      const spoken = typeof result === "string" ? result : result.spoken;
       const now = Date.now();
       store.appendMessage(chatId, { id: uid("m-"), role: "user", content, createdAt: now, instant: true });
       const replyId = uid("m-");
-      store.appendMessage(chatId, { id: replyId, role: "assistant", content: said, createdAt: now, instant: true });
-      sayNow(said, uid("quick-"), replyId);
-      useVault.getState().logActivity({ at: now, chat: chat.title, tool: "instant", title: content, outcome: "done", detail: said });
+      store.appendMessage(chatId, { id: replyId, role: "assistant", content: shown, createdAt: now, instant: true });
+      sayNow(spoken, uid("quick-"), replyId);
+      useVault.getState().logActivity({ at: now, chat: chat.title, tool: "instant", title: content, outcome: "done", detail: spoken });
       return;
     } catch {
       // Couldn't do it instantly (e.g. no app by that name): let the AI handle it.

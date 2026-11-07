@@ -199,6 +199,9 @@ export function categoryFor(name: string, args: Record<string, unknown>, ctx: Po
     case "mac_media":
     case "mac_system":
       return "media";
+    case "find_my_file":
+      // Finding (and opening) your own file with Spotlight: like double-clicking it in Finder.
+      return args.open === true ? "open" : "look_app";
     case "mac_look":
       // Reading one app's window changes nothing: never asks (never-touch apps are caught above).
       return "look_app";

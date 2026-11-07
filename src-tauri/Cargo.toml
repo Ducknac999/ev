@@ -1,6 +1,6 @@
 [package]
 name = "ev"
-version = "1.0.3"
+version = "1.0.4"
 description = "Multi-chat desktop workspace"
 edition = "2021"
 
@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["process", "io-util", "rt-multi-thread", "macros", "sync", "fs", "time", "net"] }

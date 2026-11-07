@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   approvalKeys: { approve: "control+option+a", always: "control+option+s", cancel: "control+option+d" },
   panel: { shortcut: "option+space", chatId: null },
+  notch: { mode: "ev", chatPanels: true, lyrics: "keep", caffeine: { lid: false, batteryLimit: 0, minutes: 0 } },
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
@@ -128,6 +129,15 @@ function normalize(raw: unknown): Settings {
   if (typeof settings.voice.replyGateDb !== "number" || !Number.isFinite(settings.voice.replyGateDb)) settings.voice.replyGateDb = 10;
   settings.approvalKeys = { ...DEFAULT_SETTINGS.approvalKeys, ...(input.approvalKeys ?? {}) };
   settings.panel = { ...DEFAULT_SETTINGS.panel, ...(input.panel ?? {}) };
+  const notch = (input.notch ?? {}) as Partial<Settings["notch"]>;
+  const caffeine = (notch.caffeine ?? {}) as Partial<Settings["notch"]["caffeine"]>;
+  const whole = (n: unknown, max: number) => (typeof n === "number" && n >= 0 ? Math.min(Math.round(n), max) : 0);
+  settings.notch = {
+    mode: notch.mode === "vorssaint" || notch.mode === "off" ? notch.mode : "ev",
+    chatPanels: notch.chatPanels !== false,
+    lyrics: notch.lyrics === "never" ? "never" : "keep",
+    caffeine: { lid: caffeine.lid === true, batteryLimit: whole(caffeine.batteryLimit, 95), minutes: whole(caffeine.minutes, 24 * 60) },
+  };
   const limit = Number(input.spending?.dailyLimit);
   settings.spending = { dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 0 };
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };

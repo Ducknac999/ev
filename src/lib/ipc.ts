@@ -623,3 +623,47 @@ export const moveFromPersonal = () => invoke<void>("move_from_personal");
 export const updateReleases = () => invoke<ReleaseInfo[]>("update_releases");
 /** Adds/replaces or removes an E.V reminder in the Mac's Calendar (rings even when E.V is closed). */
 export const calendarSync = (request: Record<string, unknown>) => invoke<void>("calendar_sync", { request });
+
+// ── The E.V notch (src-tauri/src/notch_window.rs) ─────────────────────────────
+
+export type NotchGeometry = { hasNotch: boolean; width: number; height: number };
+export const notchGeometry = () => invoke<NotchGeometry>("notch_geometry");
+export const notchEnable = (on: boolean) => invoke<void>("notch_enable", { on });
+export const notchResize = (width: number, height: number) => invoke<void>("notch_resize", { width, height });
+export const notchKeyboard = (on: boolean) => invoke<void>("notch_keyboard", { on });
+export const notchOpenMain = () => invoke<void>("notch_open_main");
+export const notchMainVisible = (visible: boolean) => invoke<void>("notch_main_visible", { visible });
+export const notchDragOut = (paths: string[]) => invoke<void>("notch_drag_out", { paths });
+export const notchAnswer = (id: string, decision: "allow" | "always" | "deny") => invoke<void>("notch_answer", { id, decision });
+
+export type Caffeine = { on: boolean; lid: boolean; lidReady: boolean; until: number | null; batteryLimit: number | null; ended: string | null };
+export const caffeineSet = (on: boolean, lid: boolean, minutes?: number, batteryLimit?: number) =>
+  invoke<Caffeine>("caffeine_set", { on, lid, minutes: minutes || null, batteryLimit: batteryLimit || null });
+export const caffeineStatus = () => invoke<Caffeine>("caffeine_status");
+export const caffeineRemovePermission = () => invoke<Caffeine>("caffeine_remove_permission");
+
+export type FileHit = { path: string; name: string; folder: string; when: string; score: number; named: boolean };
+export type FileSearch = { results: FileHit[]; clear: boolean; key: string; empty: boolean };
+export const findMyFiles = (query: string, picks: Record<string, string> = {}) => invoke<FileSearch>("find_my_files", { query, picks });
+export const fileOpen = (path: string, reveal = false) => invoke<void>("file_open", { path, reveal });
+export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
+
+export type SongInfo = {
+  playing: boolean;
+  title?: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  elapsed?: number;
+  rate?: number;
+  timestamp?: number;
+  fetchedAt: number;
+  app?: string;
+  artwork?: string;
+  artworkMime?: string;
+};
+export const nowPlayingInfo = (artwork = false) => invoke<SongInfo | null>("now_playing_info", { artwork });
+export type Lyrics = { synced: string; plain: string };
+export const lyricsFor = (artist: string, title: string, album: string | undefined, duration: number | undefined, save: boolean) =>
+  invoke<Lyrics | null>("lyrics", { artist, title, album: album ?? null, duration: duration ?? null, save });
+export const lyricsClear = () => invoke<void>("lyrics_clear");

@@ -294,6 +294,24 @@ export interface Settings {
   approvalKeys: { approve: string; always: string; cancel: string };
   /** The quick panel: its shortcut, and the chat it shows (null = the most recent). */
   panel: { shortcut: string; chatId: string | null };
+  /**
+   * The notch: E.V's own (with the music card, drop box and ☕), the Vorssaint app's, or none.
+   * `chatPanels` off: E.V's window stays hidden and E.V lives in the notch.
+   */
+  notch: {
+    mode: "ev" | "vorssaint" | "off";
+    chatPanels: boolean;
+    /** Synced lyrics: keep the last 100 songs on the Mac (~0.5 MB), or never save them. */
+    lyrics: "keep" | "never";
+    caffeine: {
+      /** ☕ keeps the Mac awake with the lid closed too (password once to set up). */
+      lid: boolean;
+      /** Turns ☕ off by itself below this battery % (0 = never). */
+      batteryLimit: number;
+      /** ☕ turns off by itself after this many minutes (0 = when you turn it off). */
+      minutes: number;
+    };
+  };
   /** DeepSeek spending: a daily limit in the account's currency (0 = no limit). */
   spending: { dailyLimit: number };
   /** A screen question needs a picture but the chat's model can't see pictures: ask, use Flash · Vision for that look, or read the screen as text. */

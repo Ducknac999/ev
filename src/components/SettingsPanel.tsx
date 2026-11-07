@@ -10,6 +10,7 @@ import { ConnectionsSettings } from "./ConnectionsSettings";
 import { GideonBrowserSettings } from "./GideonBrowserSettings";
 import { ClaudePlanUsage } from "./ClaudePlanUsage";
 import { SpendingSettings } from "./SpendingSettings";
+import { NotchSettings } from "./NotchSettings";
 import { UpdateSettings } from "./UpdateSettings";
 import { MoveInCard } from "./MoveInCard";
 import {
@@ -366,6 +367,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </dl>
             </div>
           )}
+          {tab === "general" && <NotchSettings draft={draft} update={update} />}
           {tab === "general" && <SpendingSettings draft={draft} update={update} />}
           {tab === "updates" && <UpdateSettings />}
           {tab === "general" && <MoveInCard />}

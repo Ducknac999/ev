@@ -17,6 +17,10 @@ mod mac_control;
 mod mcp;
 mod passphrase;
 mod notch;
+mod notch_window;
+mod caffeine;
+mod files;
+mod lyrics;
 mod panel;
 mod playing;
 mod pty;
@@ -148,6 +152,8 @@ pub fn run() {
             }
             gideon_browser::set_app(app.handle().clone());
             control::start(app.handle().clone());
+            notch_window::start(app.handle().clone());
+            caffeine::start(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -236,6 +242,23 @@ pub fn run() {
             notch::notch_request,
             notch::notch_withdraw,
             notch::notch_message,
+            notch::notch_answer,
+            notch_window::notch_geometry,
+            notch_window::notch_enable,
+            notch_window::notch_resize,
+            notch_window::notch_keyboard,
+            notch_window::notch_open_main,
+            notch_window::notch_main_visible,
+            notch_window::notch_drag_out,
+            caffeine::caffeine_set,
+            caffeine::caffeine_status,
+            caffeine::caffeine_remove_permission,
+            files::find_my_files,
+            files::file_open,
+            files::files_exist,
+            lyrics::lyrics,
+            lyrics::lyrics_clear,
+            playing::now_playing_info,
             playing::audio_playing,
             playing::media_now,
             playing::media_pause,
@@ -299,13 +322,21 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building E.V")
         .run(move |app, event| {
+            // The Dock icon brings E.V's window back (also when chat panels are off).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                    let _ = main.show();
+                    let _ = main.set_focus();
+                }
+            }
             if let tauri::RunEvent::Exit = event {
                 ptys_on_exit.kill_all();
                 mcp::stop_all();
                 bg::stop_all();
                 gideon_browser::stop();
                 control::release_socket();
-                let _ = app;
+                caffeine::stop(app);
             }
         });
 }
