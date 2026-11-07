@@ -352,22 +352,10 @@ export function Notch() {
     return { w, h: Math.min(mode === "open" ? 420 : 300, h + contentHeight + 4) };
   }, [geo, mode, contentHeight]);
 
-  // Grows the window first and shrinks it after the shape has animated, so nothing is clipped.
-  const [shape, setShape] = useState(target);
-  const windowSize = useRef({ w: 0, h: 0 });
+  // The window never moves (src-tauri/src/notch_window.rs): only the shape animates inside it.
+  const shape = target;
   useEffect(() => {
-    const prev = windowSize.current;
-    const grow = { w: Math.max(prev.w, target.w), h: Math.max(prev.h, target.h) };
-    if (grow.w !== prev.w || grow.h !== prev.h) {
-      windowSize.current = grow;
-      void notchResize(grow.w, grow.h).catch(() => {});
-    }
-    setShape(target);
-    const id = window.setTimeout(() => {
-      windowSize.current = target;
-      void notchResize(target.w, target.h).catch(() => {});
-    }, 260);
-    return () => window.clearTimeout(id);
+    void notchResize(target.w, target.h).catch(() => {});
   }, [target]);
 
   const radius = mode === "idle" || mode === "wings" ? Math.min(14, geo.height / 2.4) : 20;

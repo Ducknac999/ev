@@ -14,8 +14,17 @@ const LEVEL: isize = 27;
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static ON: AtomicBool = AtomicBool::new(false);
-/// The window's rectangle in screen points, top-left origin (CGEvent coordinates), for hover.
-static RECT: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
+/// The window never moves or resizes once placed (macOS sometimes shifts a window that's being
+/// resized, above all in full-screen Spaces): it's this fixed, transparent envelope at the top
+/// center, and the black shape grows and shrinks inside it. Clicks outside the shape pass
+/// through to whatever is underneath.
+const ENVELOPE_W: f64 = 600.0;
+const ENVELOPE_H: f64 = 470.0;
+/// The black shape's rectangle in screen points, top-left origin (CGEvent coordinates).
+static SHAPE: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
+/// Where the envelope should be, in AppKit coordinates (bottom-left origin).
+static PLACED: Mutex<Option<Rect>> = Mutex::new(None);
+static TAKES_MOUSE: AtomicBool = AtomicBool::new(true);
 static RETURN_TO: Mutex<Option<i32>> = Mutex::new(None);
 
 pub(crate) fn active() -> bool {
@@ -119,10 +128,9 @@ fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return Ok(window);
     }
-    let (_, width, height, _, _) = screen();
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
         .title("E.V notch")
-        .inner_size(width, height)
+        .inner_size(ENVELOPE_W, ENVELOPE_H)
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -150,11 +158,10 @@ fn ensure(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
             let _: () = msg_send![w, setCollectionBehavior: CAN_JOIN_ALL_SPACES | STATIONARY | IGNORES_CYCLE | FULL_SCREEN_AUXILIARY];
         }
     }
-    place(&window, width, height);
+    place(&window);
     Ok(window)
 }
 
-/// Top center of the notch's screen, `width` × `height` points, growing downward.
 /// Over the menu bar: set again after anything that may reset it (showing the window).
 fn lift(window: &tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
@@ -167,19 +174,59 @@ fn lift(window: &tauri::WebviewWindow) {
     }
 }
 
-fn place(window: &tauri::WebviewWindow, width: f64, height: f64) {
+/// The envelope at the top center of the notch's screen; the shape starts as the notch itself.
+fn place(window: &tauri::WebviewWindow) {
     lift(window);
-    let (frame, _, _, _, primary_h) = screen();
-    let x = frame.origin.x + (frame.size.w - width) / 2.0;
-    let y = frame.origin.y + frame.size.h - height;
-    *RECT.lock().unwrap() = (x, primary_h - (y + height), width, height);
+    let (frame, nw, nh, _, primary_h) = screen();
+    let rect = Rect {
+        origin: Point { x: frame.origin.x + (frame.size.w - ENVELOPE_W) / 2.0, y: frame.origin.y + frame.size.h - ENVELOPE_H },
+        size: Size { w: ENVELOPE_W, h: ENVELOPE_H },
+    };
+    *PLACED.lock().unwrap() = Some(rect);
+    {
+        let mut shape = SHAPE.lock().unwrap();
+        let (w, h) = if shape.2 > 0.0 { (shape.2, shape.3) } else { (nw, nh) };
+        *shape = (frame.origin.x + (frame.size.w - w) / 2.0, primary_h - (frame.origin.y + frame.size.h), w, h);
+    }
     #[cfg(target_os = "macos")]
     if let Ok(ns_window) = window.ns_window() {
         use objc2::msg_send;
         use objc2::runtime::AnyObject;
-        let rect = Rect { origin: Point { x, y }, size: Size { w: width, h: height } };
         unsafe {
-            let _: () = msg_send![ns_window as *mut AnyObject, setFrame: rect, display: true];
+            let w = ns_window as *mut AnyObject;
+            // No zoom/fade when it appears or changes (NSWindowAnimationBehaviorNone).
+            let _: () = msg_send![w, setAnimationBehavior: 2isize];
+            let _: () = msg_send![w, setFrame: rect, display: true];
+        }
+    }
+}
+
+/// Puts the envelope back if anything moved it, or the screens changed. Main thread.
+fn heal(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Ok(ns_window) = window.ns_window() {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        let (frame, _, _, _, _) = screen();
+        let want_x = frame.origin.x + (frame.size.w - ENVELOPE_W) / 2.0;
+        let want_y = frame.origin.y + frame.size.h - ENVELOPE_H;
+        let now: Rect = unsafe { msg_send![ns_window as *mut AnyObject, frame] };
+        let level: isize = unsafe { msg_send![ns_window as *mut AnyObject, level] };
+        let off = (now.origin.x - want_x).abs() > 0.5 || (now.origin.y - want_y).abs() > 0.5 || (now.size.w - ENVELOPE_W).abs() > 0.5 || (now.size.h - ENVELOPE_H).abs() > 0.5;
+        if off || level != LEVEL {
+            place(window);
+        }
+    }
+}
+
+/// Lets clicks reach the shape, and pass through everywhere else in the envelope. Main thread.
+fn take_mouse(window: &tauri::WebviewWindow, take: bool) {
+    #[cfg(target_os = "macos")]
+    if let Ok(ns_window) = window.ns_window() {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        unsafe {
+            let _: () = msg_send![ns_window as *mut AnyObject, setIgnoresMouseEvents: !take];
         }
     }
 }
@@ -198,9 +245,9 @@ fn show(app: &AppHandle, on: bool) -> Result<(), String> {
         }
         let _ = window.show();
         // Showing resets the level, and macOS keeps normal windows below the menu bar: put it back.
-        let (_, _, w, h) = *RECT.lock().unwrap();
-        let (_, nw, nh, _, _) = screen();
-        place(&window, if w > 0.0 { w } else { nw }, if h > 0.0 { h } else { nh });
+        place(&window);
+        TAKES_MOUSE.store(false, Ordering::Relaxed);
+        take_mouse(&window, false);
     } else if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.close();
     }
@@ -217,16 +264,13 @@ pub fn notch_enable(app: AppHandle, on: bool) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// The notch's content changed size: the window follows, staying centered at the top.
+/// The black shape's size now (it's drawn centered at the top of the envelope): for hover and
+/// for which clicks the notch takes. The window itself doesn't change.
 #[tauri::command]
-pub fn notch_resize(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        if let Some(window) = handle.get_webview_window(LABEL) {
-            place(&window, width.clamp(60.0, 900.0), height.clamp(20.0, 700.0));
-        }
-    })
-    .map_err(|e| e.to_string())
+pub fn notch_resize(width: f64, height: f64) {
+    let (frame, _, _, _, primary_h) = screen();
+    let (w, h) = (width.clamp(60.0, ENVELOPE_W), height.clamp(20.0, ENVELOPE_H));
+    *SHAPE.lock().unwrap() = (frame.origin.x + (frame.size.w - w) / 2.0, primary_h - (frame.origin.y + frame.size.h), w, h);
 }
 
 /// Typing in the notch: it takes the keyboard (without bringing E.V's windows forward); done,
@@ -288,22 +332,42 @@ pub fn notch_main_visible(app: AppHandle, visible: bool) {
     }
 }
 
-/// Watches the pointer (10 times a second, only while the notch is on) and tells the notch
-/// when it's over it. A non-activating window doesn't get hover events reliably on its own.
+/// Watches the pointer (10 times a second, only while the notch is on): tells the notch when
+/// it's over the shape (a non-activating window doesn't get hover events reliably), lets clicks
+/// through outside the shape, and once a second puts the window back if anything moved it.
 pub fn start(app: AppHandle) {
     let _ = APP.set(app.clone());
     std::thread::spawn(move || {
         let mut inside = false;
+        let mut ticks = 0u32;
         loop {
             std::thread::sleep(std::time::Duration::from_millis(if active() { 100 } else { 600 }));
             if !active() {
                 inside = false;
                 continue;
             }
+            ticks = ticks.wrapping_add(1);
+            if ticks % 10 == 0 {
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(window) = handle.get_webview_window(LABEL) {
+                        heal(&window);
+                    }
+                });
+            }
             let Some(point) = pointer() else { continue };
-            let (x, y, w, h) = *RECT.lock().unwrap();
+            let (x, y, w, h) = *SHAPE.lock().unwrap();
             // A few points of slack below, so moving down into the card doesn't flicker it.
             let now = point.0 >= x && point.0 <= x + w && point.1 >= y - 2.0 && point.1 <= y + h + 6.0;
+            if now != TAKES_MOUSE.load(Ordering::Relaxed) {
+                TAKES_MOUSE.store(now, Ordering::Relaxed);
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(window) = handle.get_webview_window(LABEL) {
+                        take_mouse(&window, now);
+                    }
+                });
+            }
             if now != inside {
                 inside = now;
                 let _ = app.emit_to(LABEL, "notch-hover", inside);
