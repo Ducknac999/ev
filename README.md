@@ -36,3 +36,5 @@ Everything stays on your Mac: your keys (in the macOS keychain), chats, memory a
 ## License
 
 MIT — see [LICENSE](LICENSE). Some methods come from other open-source projects; see [CREDITS.md](CREDITS.md).
+
+**Use at your own risk** — read the [**Disclaimer**](DISCLAIMER.md) before using E.V.
