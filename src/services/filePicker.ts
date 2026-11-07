@@ -50,7 +50,11 @@ export function fileRequest(text: string): string | null {
   const rest = t.replace(lead, "");
   // "open my downloads folder": a place, not a file — mac_open does it.
   if (/^(?:open|show)\s+(?:me\s+)?(?:my|the)\s+(?:downloads|desktop|documents|pictures|movies|music|home|applications|trash)(?:\s+folder)?$/i.test(rest)) return null;
-  if (/^(?:find|locate|where(?:'s|\s+is|\s+are)?|search\s+for)\s+(?:my|the|a|that)\b/i.test(rest)) return rest;
+  // Mail, messages, tabs and places aren't files: the AI handles those.
+  if (/\b(?:e-?mails?|mail|inbox|messages?|texts?|tabs?|websites?|site|page|places?|restaurants?|nearby|near me|flights?|hotels?)\b/i.test(rest)) return null;
+  const fileWord = /\b(?:file|files|document|doc|docx|pdf|folder|spreadsheet|sheet|slides|presentation|screenshot|photo|picture|image|video|essay|resume|cv|notes|invoice|receipt|report|letter|form|download)s?\b/i;
+  if (/^(?:find|locate|where(?:'s|\s+is|\s+are)?)\s+my\b/i.test(rest)) return rest;
+  if (/^(?:find|locate|where(?:'s|\s+is|\s+are)?|search\s+for)\s+(?:the|a|that)\b/i.test(rest) && fileWord.test(rest)) return rest;
   // "open my resume", "open the tax return PDF", "pull up my essay": a file, not an app.
   if (/^(?:open|show|pull\s+up|bring\s+up)\s+(?:me\s+)?(?:my|the\s+(?:latest|newest|last|most\s+recent))\b/i.test(rest)) return rest;
   if (/^(?:open|show|pull\s+up)\s+.+\b(?:pdf|docx?|file|document|spreadsheet|slides|presentation|screenshot|photo|folder)$/i.test(rest)) return rest;

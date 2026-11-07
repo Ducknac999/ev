@@ -1,3 +1,5 @@
+import { LeakFilter } from "./leakFilter";
+import { learnRoute, routeFromAiCall, routeInstantly } from "./router";
 import { speechQueue } from "../audio/speech";
 import { agentContext, AbortedError } from "../lib/ipc";
 import { uid } from "../lib/ids";
@@ -397,6 +399,23 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     }
   }
 
+  // One instant action does the whole request? Decided on this Mac with no tokens (router.ts).
+  const lastAnswer = [...chat.messages].reverse().find((m) => m.role === "assistant" && !m.instant);
+  // Not when E.V just asked something: "50" or "the blue one" is an answer to that, not a command.
+  const answering = Boolean(lastAnswer && /\?\s*$/.test(lastAnswer.content.trim()) && Date.now() - lastAnswer.createdAt < 10 * 60_000);
+  if (!attachments && !chat.workspace && !answering) {
+    const instant = await routeInstantly(content);
+    if (instant) {
+      const now = Date.now();
+      store.appendMessage(chatId, { id: uid("m-"), role: "user", content, createdAt: now, instant: true });
+      const replyId = uid("m-");
+      store.appendMessage(chatId, { id: replyId, role: "assistant", content: instant.text, createdAt: now, instant: true });
+      sayNow(instant.spoken, uid("quick-"), replyId);
+      useVault.getState().logActivity({ at: now, chat: chat.title, tool: "instant", title: content, outcome: "done", detail: `${instant.spoken} (${instant.via})` });
+      return;
+    }
+  }
+
   // "Forget that shortcut": drops the learned task used most recently.
   if (!attachments && isForgetRequest(content)) {
     const latest = [...useVault.getState().learned].sort((a, b) => (b.lastUsed ?? b.createdAt) - (a.lastUsed ?? a.createdAt))[0];
@@ -506,9 +525,16 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     if (frame === null) frame = requestAnimationFrame(flush);
     if (options.speak) speechQueue.feed(reply.id, spoken, false, label);
   };
-  const onText = (delta: string) => {
+  const passText = (delta: string) => {
     if (researched) held += delta;
     else show(delta);
+  };
+  // Tool-call markup a model wrote into its answer by mistake is never shown or said (leakFilter.ts).
+  const leak = new LeakFilter();
+  let leakRetried = false;
+  const onText = (delta: string) => {
+    const safe = leak.push(delta);
+    if (safe) passText(safe);
   };
   const flushNow = () => {
     if (frame !== null) cancelAnimationFrame(frame);
@@ -879,10 +905,13 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       held = "";
       const result = await runWithKey(stepModel, async (key) => {
         held = "";
+        leak.reset();
         const out = await adapter.step({ model: stepModel, key, system: turnSystem, conversation: [...base, ...keepRecentPictures(provider, turnItems)], tools, signal, onText, thinking, onThinking });
         return { value: out, headers: out.headers };
       });
       const { calls, item } = result;
+      const tail = leak.end();
+      if (tail) passText(tail);
       if (result.usage) {
         turnUsage.input += result.usage.input;
         turnUsage.cached += result.usage.cached;
@@ -891,6 +920,19 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         useUsage.getState().add(result.usage);
       }
       turnItems.push(item);
+      if (calls.length === 0 && leak.leaked) {
+        // The model wrote its tool call as text. Once: ask it to make the call properly.
+        if (!leakRetried && !signal.aborted) {
+          leakRetried = true;
+          leak.reset();
+          turnItems.push(
+            userTurn(`Your last reply came out as raw tool-call text instead of a real tool call, so nothing ran. Make the call properly now (or, if no tool is needed, just answer). The user asked: "${content.slice(0, 400)}".`),
+          );
+          continue;
+        }
+        leak.reset();
+        if (!spoken.trim() && !held.trim()) show("Something went wrong with that answer. Ask me again?");
+      }
       if (calls.length === 0) {
         // About to finish: if this task made or changed files it hasn't looked at since, or changed
         // code without running anything, it gets one reminder to check its work first.
@@ -1390,7 +1432,8 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       }
       // Only quick actions this step, all done: confirm locally instead of asking the AI to.
       if (planned.length && planned.every((p) => QUICK_ACTIONS.has(p.call.name)) && results.every((r) => !/^Error|^Refused/.test(r.output))) {
-        const confirmation = planned.map((p) => p.step.title).join(" · ") + ".";
+        // What happened ("Set volume 100."), not what the action is called ("Change volume / dark mode").
+        const confirmation = results.map((r) => r.output.split("\n")[0].trim().replace(/\.$/, "")).filter(Boolean).join(" · ") + ".";
         turnItems.push(provider === "gemini" ? { role: "model", parts: [{ text: confirmation }] } : { role: "assistant", content: confirmation });
         show(confirmation);
         break;
@@ -1442,6 +1485,12 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     else if (spoken.trim()) useChats.getState().patchMessage(chatId, reply.id, { voiceNote: "🔇 Not spoken: you typed (say “…out loud” to hear it)" });
     const finished = useChats.getState().chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === reply.id);
     const hadActions = finished?.blocks?.some((b) => b.type === "tool");
+    // Answered with exactly one simple action: the router does it instantly next time.
+    const doneSteps = (finished?.blocks ?? []).flatMap((b) => (b.type === "tool" && b.step.name !== "load_tools" && b.step.name !== "settings_undo" ? [b.step] : []));
+    if (doneSteps.length === 1 && doneSteps[0].status === "done" && !attachments) {
+      const learned = routeFromAiCall(doneSteps[0].name, doneSteps[0].args);
+      if (learned) learnRoute(content, learned.tool, learned.values);
+    }
     const route = routeOf((finished?.blocks ?? []).flatMap((b) => (b.type === "tool" ? [b.step] : [])));
     if (route && content) useVault.getState().learnRecipe(content, route);
     if (reasoningTimer) clearTimeout(reasoningTimer);

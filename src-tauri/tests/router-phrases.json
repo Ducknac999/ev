@@ -1,0 +1,578 @@
+[
+[
+"max volume",
+"volume"
+],
+[
+"100% volume",
+"volume"
+],
+[
+"crank it all the way up",
+"volume"
+],
+[
+"turn it down a bit",
+"volume"
+],
+[
+"it's too loud",
+"volume"
+],
+[
+"mute",
+"volume"
+],
+[
+"volume to half",
+"volume"
+],
+[
+"make it louder please",
+"volume"
+],
+[
+"set the volume to 35",
+"volume"
+],
+[
+"sound at 20 percent",
+"volume"
+],
+[
+"unmute",
+"volume"
+],
+[
+"can you turn the sound down",
+"volume"
+],
+[
+"a little quieter",
+"volume"
+],
+[
+"volume all the way down",
+"volume"
+],
+[
+"bump the volume up",
+"volume"
+],
+[
+"I can't hear it",
+"volume"
+],
+[
+"skip this song",
+"media"
+],
+[
+"play the next one",
+"media"
+],
+[
+"go back a song",
+"media"
+],
+[
+"pause the music",
+"media"
+],
+[
+"resume",
+"media"
+],
+[
+"stop the music",
+"media"
+],
+[
+"next track please",
+"media"
+],
+[
+"previous song",
+"media"
+],
+[
+"hit play",
+"media"
+],
+[
+"pause it",
+"media"
+],
+[
+"skip",
+"media"
+],
+[
+"play the last song again",
+"media"
+],
+[
+"go dark",
+"dark_mode"
+],
+[
+"switch to light mode",
+"dark_mode"
+],
+[
+"turn on dark mode",
+"dark_mode"
+],
+[
+"light mode please",
+"dark_mode"
+],
+[
+"make the screen dark theme",
+"dark_mode"
+],
+[
+"open spotify",
+"open_app"
+],
+[
+"launch discord",
+"open_app"
+],
+[
+"fire up safari",
+"open_app"
+],
+[
+"open notes",
+"open_app"
+],
+[
+"start zoom",
+"open_app"
+],
+[
+"bring up calculator",
+"open_app"
+],
+[
+"open system settings",
+"open_app"
+],
+[
+"find my resume",
+"find_file"
+],
+[
+"where's my essay from last week",
+"find_file"
+],
+[
+"open the tax pdf",
+"find_file"
+],
+[
+"find the budget spreadsheet",
+"find_file"
+],
+[
+"where is my cover letter",
+"find_file"
+],
+[
+"open my latest screenshot",
+"find_file"
+],
+[
+"what is two times three times four",
+"calculate"
+],
+[
+"what's 15 percent of 80",
+"calculate"
+],
+[
+"12 squared",
+"calculate"
+],
+[
+"half of 250",
+"calculate"
+],
+[
+"what's 1200 divided by 7",
+"calculate"
+],
+[
+"how much is 45 plus 38",
+"calculate"
+],
+[
+"seven times eight",
+"calculate"
+],
+[
+"square root of 144",
+"calculate"
+],
+[
+"what time is it",
+"time"
+],
+[
+"what's today's date",
+"time"
+],
+[
+"what day is it",
+"time"
+],
+[
+"tell me the time",
+"time"
+],
+[
+"what's the weather",
+"none"
+],
+[
+"turn the volume down and text Chris I'm busy",
+"none"
+],
+[
+"write an email to my teacher",
+"none"
+],
+[
+"who won the game last night",
+"none"
+],
+[
+"explain how volume works",
+"none"
+],
+[
+"play some jazz",
+"none"
+],
+[
+"open youtube music in brave",
+"none"
+],
+[
+"why is my mac slow",
+"none"
+],
+[
+"remind me at 6 to call mom",
+"none"
+],
+[
+"what song is playing",
+"none"
+],
+[
+"summarize this page",
+"none"
+],
+[
+"if I have 3 apples and eat one how many are left",
+"none"
+],
+[
+"set a timer for 10 minutes",
+"none"
+],
+[
+"play billie jean on spotify",
+"none"
+],
+[
+"what's the capital of france",
+"none"
+],
+[
+"send a message to mom",
+"none"
+],
+[
+"open the last email from my boss",
+"none"
+],
+[
+"delete my downloads folder",
+"none"
+],
+[
+"how do I make pasta",
+"none"
+],
+[
+"translate hello to spanish",
+"none"
+],
+[
+"turn on wifi",
+"none"
+],
+[
+"close safari",
+"none"
+],
+[
+"what's on my calendar today",
+"none"
+],
+[
+"add this song to my playlist",
+"none"
+],
+[
+"read my last text",
+"none"
+],
+[
+"make a new note called groceries",
+"none"
+],
+[
+"what's the stock price of apple",
+"none"
+],
+[
+"search for cheap flights",
+"none"
+],
+[
+"who is the president",
+"none"
+],
+[
+"is it going to rain tomorrow",
+"none"
+],
+[
+"open the third tab",
+"none"
+],
+[
+"how many days until christmas",
+"none"
+],
+[
+"what's my battery",
+"none"
+],
+[
+"shut down the computer",
+"none"
+],
+[
+"take a screenshot",
+"none"
+],
+[
+"like this song",
+"none"
+],
+[
+"can you turn the volume up a little",
+"volume"
+],
+[
+"volume down",
+"volume"
+],
+[
+"set sound to 60",
+"volume"
+],
+[
+"turn the music louder",
+"volume"
+],
+[
+"silence",
+"volume"
+],
+[
+"volume max",
+"volume"
+],
+[
+"lower the volume to 20 percent",
+"volume"
+],
+[
+"make it quieter",
+"volume"
+],
+[
+"next",
+"media"
+],
+[
+"play",
+"media"
+],
+[
+"go to the next song",
+"media"
+],
+[
+"back one song",
+"media"
+],
+[
+"pause the video",
+"media"
+],
+[
+"continue playing",
+"media"
+],
+[
+"restart the song",
+"none"
+],
+[
+"enable dark mode",
+"dark_mode"
+],
+[
+"disable dark mode",
+"dark_mode"
+],
+[
+"open finder",
+"open_app"
+],
+[
+"open the calculator app",
+"open_app"
+],
+[
+"launch photoshop",
+"open_app"
+],
+[
+"open messages",
+"open_app"
+],
+[
+"find my notes from biology",
+"find_file"
+],
+[
+"where did I save the invoice",
+"find_file"
+],
+[
+"find the pdf my teacher sent",
+"find_file"
+],
+[
+"what's 3 plus 4 times 2",
+"calculate"
+],
+[
+"how much is 20 percent of 45",
+"calculate"
+],
+[
+"what's 99 times 99",
+"calculate"
+],
+[
+"divide 100 by 8",
+"calculate"
+],
+[
+"what's 2 to the power of 10",
+"calculate"
+],
+[
+"what's the time",
+"time"
+],
+[
+"what's the date today",
+"time"
+],
+[
+"what year is it",
+"time"
+],
+[
+"what's the weather like tomorrow",
+"none"
+],
+[
+"play my workout playlist",
+"none"
+],
+[
+"turn up the brightness",
+"none"
+],
+[
+"open google docs",
+"none"
+],
+[
+"find a good pizza place nearby",
+"none"
+],
+[
+"what's the news",
+"none"
+],
+[
+"mute the zoom call",
+"none"
+],
+[
+"how loud is a jet engine",
+"none"
+],
+[
+"what's 5 dollars in euros",
+"none"
+],
+[
+"convert 10 miles to km",
+"none"
+],
+[
+"set an alarm for 7",
+"none"
+],
+[
+"call mom",
+"none"
+],
+[
+"what's my next meeting",
+"none"
+],
+[
+"open my email",
+"none"
+],
+[
+"pause for a second, let me think",
+"none"
+],
+[
+"what does volume mean",
+"none"
+],
+[
+"tell me a joke",
+"none"
+],
+[
+"thanks",
+"none"
+]
+]

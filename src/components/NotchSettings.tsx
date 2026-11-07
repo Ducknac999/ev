@@ -87,3 +87,21 @@ export function NotchSettings({ draft, update }: { draft: Settings; update: (fn:
     </div>
   );
 }
+
+/** Settings → General → Instant actions: the on-device router (services/router.ts). */
+export function InstantSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
+  return (
+    <div className="settings-card">
+      <h4>Instant actions</h4>
+      <p className="settings-intro">
+        Simple things — volume, play/pause, dark mode, opening an app, finding a file, math, the time — are done right away, however you say them, with no AI and no
+        tokens. Your Mac's own on-device model (Apple Intelligence, macOS 26) decides; anything it isn't sure about goes to your AI as usual. Requests your AI handled
+        with one simple action are instant from then on.
+      </p>
+      <label className="check-row">
+        <input type="checkbox" checked={draft.router.enabled} onChange={(e) => update((d) => void (d.router.enabled = e.target.checked))} />
+        <span>Do simple requests instantly on this Mac</span>
+      </label>
+    </div>
+  );
+}

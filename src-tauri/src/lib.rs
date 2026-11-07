@@ -21,6 +21,7 @@ mod notch_window;
 mod caffeine;
 mod files;
 mod lyrics;
+mod router;
 mod panel;
 mod playing;
 mod pty;
@@ -258,6 +259,8 @@ pub fn run() {
             files::files_exist,
             lyrics::lyrics,
             lyrics::lyrics_clear,
+            router::route_request,
+            router::route_prewarm,
             playing::now_playing_info,
             playing::audio_playing,
             playing::media_now,

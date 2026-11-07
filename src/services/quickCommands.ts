@@ -1,5 +1,6 @@
 import { macMedia, macOpen, macSystem } from "../lib/ipc";
 import { fileRequest, findFile, parsePick, pickFile } from "./filePicker";
+import { solveSpoken } from "./spokenMath";
 
 /**
  * Instant commands: simple Mac actions E.V does itself, with no AI call — as fast as the
@@ -14,7 +15,8 @@ export type QuickCommand =
   | { kind: "dark"; on: boolean }
   | { kind: "open"; app: string }
   | { kind: "findFile"; query: string }
-  | { kind: "pickFile"; index: number };
+  | { kind: "pickFile"; index: number }
+  | { kind: "math"; shown: string; spoken: string };
 
 const FILLER = /^(?:(?:ok(?:ay)?|hey|so|um+|uh+|yo)[,\s]+)*(?:(?:can|could|would|will)\s+you\s+|please\s+|just\s+|go\s+(?:ahead\s+and\s+)?)*/i;
 const TAIL = /[\s,]*(?:please|for\s+me|now|right\s+now|thanks?(?:\s+you)?)*[\s.!?]*$/i;
@@ -37,6 +39,8 @@ export function parseQuickCommand(input: string): QuickCommand | null {
   if (index) return { kind: "pickFile", index };
   const file = fileRequest(input);
   if (file) return { kind: "findFile", query: file };
+  const math = solveSpoken(input);
+  if (math) return { kind: "math", ...math };
   const text = input.trim().replace(FILLER, "").replace(TAIL, "").trim().toLowerCase();
   if (!text || text.length > 60 || /\b(and|then|also|after|before|tell|send|message|search|find|why|what|how|who|when)\b/.test(text)) return null;
 
@@ -49,6 +53,13 @@ export function parseQuickCommand(input: string): QuickCommand | null {
   if (/^unmute(?:\s+(?:the\s+)?(?:sound|volume|audio|mac|computer|it))?$/.test(text)) return { kind: "mute", on: false };
   if (/^(?:turn\s+(?:the\s+)?(?:volume|sound|it)\s+up|volume\s+up|louder|raise\s+(?:the\s+)?volume)$/.test(text)) return { kind: "volume", by: 10 };
   if (/^(?:turn\s+(?:the\s+)?(?:volume|sound|it)\s+down|volume\s+down|quieter|softer|lower\s+(?:the\s+)?volume)$/.test(text)) return { kind: "volume", by: -10 };
+  // The value first: "max volume", "100% volume", "a hundred percent volume", "volume all the way up".
+  if (/^(?:max(?:imum)?|full)\s+(?:volume|sound)$|^(?:volume|sound)\s+(?:max(?:imum)?|full|all\s+the\s+way\s+up)$/.test(text)) return { kind: "volume", to: 100 };
+  const valueFirst = /^(.+?)\s+(?:volume|sound)$/.exec(text);
+  if (valueFirst && /^[\w\s%]+$/.test(valueFirst[1]) && /\d|percent|half|hundred|max|full/.test(valueFirst[1])) {
+    const to = percent(valueFirst[1]);
+    if (to !== undefined) return { kind: "volume", to };
+  }
   const volumeTo = /^(?:set\s+(?:the\s+)?)?(?:volume|sound)\s+(?:to\s+|at\s+)?(.+)$|^(?:turn|put)\s+(?:the\s+)?(?:volume|sound)\s+(?:to|at)\s+(.+)$/.exec(text);
   if (volumeTo) {
     const to = percent(volumeTo[1] ?? volumeTo[2] ?? "");
@@ -62,7 +73,7 @@ export function parseQuickCommand(input: string): QuickCommand | null {
 
   const open = /^(?:open|launch|start|bring\s+up)\s+(?:up\s+)?(?:the\s+)?(?:app\s+)?([a-z0-9][\w .&+-]{0,30}?)(?:\s+app)?$/.exec(text);
   // "Open YouTube Music in Vivaldi", "open my downloads folder": websites and places go to the AI.
-  if (open && !/\b(?:music|song|it|the)$/.test(open[1]) && !/[./]/.test(open[1]) && !/\b(?:in|on|with|to|website|site|page|folder|file|tab|link)\b/.test(open[1])) {
+  if (open && !/^(?:my|your|last|latest)\b/.test(open[1]) && !/\b(?:music|song|it|the)$/.test(open[1]) && !/[./]/.test(open[1]) && !/\b(?:in|on|with|to|website|site|page|folder|file|tab|link)\b/.test(open[1])) {
     return { kind: "open", app: open[1].replace(/\b\w/g, (c) => c.toUpperCase()) };
   }
   return null;
@@ -100,5 +111,7 @@ export async function runQuickCommand(command: QuickCommand): Promise<string | {
       return findFile(command.query);
     case "pickFile":
       return pickFile(command.index);
+    case "math":
+      return { text: command.shown, spoken: command.spoken };
   }
 }

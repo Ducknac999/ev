@@ -298,6 +298,8 @@ export interface Settings {
    * The notch: E.V's own (with the music card, drop box and ☕), the Vorssaint app's, or none.
    * `chatPanels` off: E.V's window stays hidden and E.V lives in the notch.
    */
+  /** Instant actions decided on this Mac (Apple's on-device model, no tokens) before the AI. */
+  router: { enabled: boolean };
   notch: {
     mode: "ev" | "vorssaint" | "off";
     chatPanels: boolean;

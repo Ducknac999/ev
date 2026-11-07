@@ -20,6 +20,15 @@ describe("instant commands", () => {
     expect(parseQuickCommand("open discord")).toEqual({ kind: "open", app: "Discord" });
   });
 
+  it("takes the value first too, and spoken math", () => {
+    expect(parseQuickCommand("max volume.")).toEqual({ kind: "volume", to: 100 });
+    expect(parseQuickCommand("100% volume.")).toEqual({ kind: "volume", to: 100 });
+    expect(parseQuickCommand("A hundred percent volume.")).toEqual({ kind: "volume", to: 100 });
+    expect(parseQuickCommand("volume all the way up")).toEqual({ kind: "volume", to: 100 });
+    expect(parseQuickCommand("half volume")).toEqual({ kind: "volume", to: 50 });
+    expect(parseQuickCommand("what is two times uh three times four?")).toMatchObject({ kind: "math", spoken: "24." });
+  });
+
   it("leaves anything more to the AI", () => {
     for (const t of [
       "pause the music and tell Chris I'm busy",

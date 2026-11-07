@@ -667,3 +667,8 @@ export type Lyrics = { synced: string; plain: string };
 export const lyricsFor = (artist: string, title: string, album: string | undefined, duration: number | undefined, save: boolean) =>
   invoke<Lyrics | null>("lyrics", { artist, title, album: album ?? null, duration: duration ?? null, save });
 export const lyricsClear = () => invoke<void>("lyrics_clear");
+
+// ── The instant router (src-tauri/helpers/routerlib.swift) ─────────────────────
+export type RouteReply = { available: boolean; tool: string; values?: Record<string, unknown>; ms?: number; reason?: string };
+export const routeRequest = (request: { tools: unknown; learned: { text: string; tool: string }[]; text: string }) => invoke<RouteReply>("route_request", { request });
+export const routePrewarm = () => invoke<boolean>("route_prewarm");

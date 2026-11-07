@@ -3,6 +3,7 @@ import { useSettings } from "../store/settings";
 import { useVoice } from "../store/voice";
 import { audioEngine, voiceLog } from "./engine";
 import { takeSpeakable } from "./speakable";
+import { speechSafe } from "../services/leakFilter";
 
 /**
  * Serial text-to-speech queue. Streaming replies are fed incrementally and spoken sentence by
@@ -31,6 +32,8 @@ class SpeechQueue {
 
   /** `label`: said once before this reply starts, e.g. the chat's name. */
   feed(streamKey: string, fullText: string, done: boolean, label?: string): void {
+    // Markup (a model's leaked tool call, stray tags) is never read out loud.
+    fullText = speechSafe(fullText);
     const offset = this.offsets.get(streamKey) ?? 0;
     const { segment, next } = takeSpeakable(fullText, offset, done);
     if (done) this.offsets.delete(streamKey);

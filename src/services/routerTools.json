@@ -1,0 +1,169 @@
+[
+  {
+    "name": "volume",
+    "description": "Set or change how loud the Mac's sound is (volume or sound up, down, turn up, turn down, raise, lower, crank, bump, boost, louder, quieter, softer, max, silence, mute or unmute) \u2014 also when it's too loud or they can't hear it.",
+    "args": [
+      {
+        "name": "level",
+        "type": "integer",
+        "description": "0-100 to set it to; max or full = 100, half = 50, lowest = 0"
+      },
+      {
+        "name": "change",
+        "type": "integer",
+        "description": "how much up (+) or down (-) when no exact level is given, e.g. 10 or -10"
+      },
+      {
+        "name": "muted",
+        "type": "boolean",
+        "description": "true to mute, false to unmute"
+      }
+    ],
+    "examples": [
+      "volume 30",
+      "turn it up",
+      "louder",
+      "quieter",
+      "mute the sound"
+    ]
+  },
+  {
+    "name": "media",
+    "description": "Control the music or video that's playing: play, hit play, pause, stop, resume, continue, next or previous track, skip, go back to the last song, play it again.",
+    "args": [
+      {
+        "name": "action",
+        "type": "enum",
+        "description": "what to do",
+        "choices": [
+          "play",
+          "pause",
+          "next",
+          "previous"
+        ]
+      }
+    ],
+    "examples": [
+      "next song",
+      "skip",
+      "pause",
+      "play",
+      "previous track",
+      "resume the music"
+    ]
+  },
+  {
+    "name": "dark_mode",
+    "description": "Turn the Mac's dark mode (dark theme / dark screen appearance) on, or switch to light mode.",
+    "args": [
+      {
+        "name": "on",
+        "type": "boolean",
+        "description": "true = dark, false = light"
+      }
+    ],
+    "examples": [
+      "dark mode on",
+      "light mode"
+    ]
+  },
+  {
+    "name": "open_app",
+    "description": "Open, launch, start, fire up, pull up or bring up a Mac app by its name.",
+    "args": [
+      {
+        "name": "app",
+        "type": "string",
+        "description": "the app's name"
+      }
+    ],
+    "examples": [
+      "open Notes",
+      "start Slack",
+      "launch Xcode"
+    ]
+  },
+  {
+    "name": "find_file",
+    "description": "Find, locate, open or pull up one of the user's own files, documents or folders (where is my \u2026, where did I save \u2026).",
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "what to look for, in the user's words"
+      }
+    ],
+    "examples": [
+      "find my cover letter",
+      "where is the budget spreadsheet"
+    ],
+    "asks": [
+      "where",
+      "where's",
+      "wheres",
+      "which"
+    ],
+    "takesRequest": true,
+    "needsOneOf": [
+      "my",
+      "file",
+      "files",
+      "document",
+      "documents",
+      "folder",
+      "pdf",
+      "doc",
+      "docx",
+      "spreadsheet",
+      "screenshot",
+      "photo",
+      "slides",
+      "essay",
+      "resume",
+      "invoice",
+      "notes",
+      "saved",
+      "save"
+    ]
+  },
+  {
+    "name": "calculate",
+    "description": "Work out arithmetic: how much is, plus, minus, times, multiply, divide, divided by, percent of, squared, square root, to the power of.",
+    "args": [
+      {
+        "name": "expression",
+        "type": "string",
+        "description": "the math with digits and + - * / ^ ( ), e.g. 2*3*4 or 0.15*80"
+      }
+    ],
+    "examples": [
+      "what's 7 times 8",
+      "20 percent of 150",
+      "9 squared",
+      "100 divided by 4"
+    ],
+    "asks": [
+      "what",
+      "what's",
+      "whats",
+      "how",
+      "is"
+    ]
+  },
+  {
+    "name": "time",
+    "description": "Tell the current time, the day, today's date, the month or the year.",
+    "args": [],
+    "examples": [
+      "what time is it",
+      "what's the date"
+    ],
+    "asks": [
+      "what",
+      "what's",
+      "whats",
+      "when",
+      "is"
+    ]
+  }
+]

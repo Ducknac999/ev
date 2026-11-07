@@ -1,4 +1,5 @@
 import { startNotch } from "./services/notchBridge";
+import { prewarmRouter } from "./services/router";
 import { useCallback, useEffect, useState } from "react";
 import { Onboarding } from "./components/Onboarding";
 import { Icon } from "./components/Icon";
@@ -232,6 +233,7 @@ export default function App() {
     startApprovalPopup();
     startQuickPanel();
     startNotch();
+    prewarmRouter();
     void refreshBalance(true);
   }, [loaded]);
 
