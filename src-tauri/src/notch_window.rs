@@ -26,6 +26,29 @@ static SHAPE: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
 static PLACED: Mutex<Option<Rect>> = Mutex::new(None);
 static TAKES_MOUSE: AtomicBool = AtomicBool::new(true);
 static RETURN_TO: Mutex<Option<i32>> = Mutex::new(None);
+/// The app in front is full screen on the notch's screen (the notch hides then, like the menu bar).
+static FULLSCREEN: AtomicBool = AtomicBool::new(false);
+
+/// Asks the helper library whether the front app fills the notch's screen.
+fn front_fullscreen() -> bool {
+    type Fn = unsafe extern "C" fn(f64, f64, f64, f64) -> bool;
+    static F: OnceLock<usize> = OnceLock::new();
+    let f = *F.get_or_init(|| {
+        let Some(path) = crate::doc::lib_path() else { return 0 };
+        let Ok(c_path) = std::ffi::CString::new(path.display().to_string()) else { return 0 };
+        let handle = unsafe { libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        if handle.is_null() {
+            return 0;
+        }
+        unsafe { libc::dlsym(handle, c"ev_front_fullscreen".as_ptr()) as usize }
+    });
+    if f == 0 {
+        return false;
+    }
+    let (frame, _, _, _, primary_h) = screen();
+    let top = primary_h - (frame.origin.y + frame.size.h);
+    unsafe { std::mem::transmute::<usize, Fn>(f)(frame.origin.x, top, frame.size.w, frame.size.h) }
+}
 
 pub(crate) fn active() -> bool {
     ON.load(Ordering::Relaxed)
@@ -116,6 +139,12 @@ pub struct Geometry {
     has_notch: bool,
     width: f64,
     height: f64,
+}
+
+/// Whether the notch is hidden for a full-screen app right now (asked when the notch loads).
+#[tauri::command]
+pub fn notch_fullscreen() -> bool {
+    FULLSCREEN.load(Ordering::Relaxed)
 }
 
 #[tauri::command]
@@ -269,7 +298,8 @@ pub fn notch_enable(app: AppHandle, on: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn notch_resize(width: f64, height: f64) {
     let (frame, _, _, _, primary_h) = screen();
-    let (w, h) = (width.clamp(60.0, ENVELOPE_W), height.clamp(20.0, ENVELOPE_H));
+    // 0 × 0: the notch is hidden (a full-screen app) and takes no hover or clicks.
+    let (w, h) = if width <= 0.0 || height <= 0.0 { (0.0, 0.0) } else { (width.clamp(60.0, ENVELOPE_W), height.clamp(20.0, ENVELOPE_H)) };
     *SHAPE.lock().unwrap() = (frame.origin.x + (frame.size.w - w) / 2.0, primary_h - (frame.origin.y + frame.size.h), w, h);
 }
 
@@ -290,14 +320,7 @@ pub fn notch_keyboard(app: AppHandle, on: bool) -> Result<(), String> {
                 unsafe { crate::panel::take_keyboard(ns_window) };
             }
         } else {
-            #[cfg(target_os = "macos")]
-            if let Ok(ns_window) = window.ns_window() {
-                use objc2::msg_send;
-                use objc2::runtime::AnyObject;
-                unsafe {
-                    let _: () = msg_send![ns_window as *mut AnyObject, resignKeyWindow];
-                }
-            }
+            resign(&window);
             let front = crate::mac_control::front_app().map(|(_, pid)| pid);
             if let Some(pid) = RETURN_TO.lock().unwrap().take() {
                 if front == Some(own) && pid != own {
@@ -307,6 +330,31 @@ pub fn notch_keyboard(app: AppHandle, on: bool) -> Result<(), String> {
         }
     })
     .map_err(|e| e.to_string())
+}
+
+fn resign(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    if let Ok(ns_window) = window.ns_window() {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        unsafe {
+            let _: () = msg_send![ns_window as *mut AnyObject, resignKeyWindow];
+        }
+    }
+}
+
+/// Before pasting a clipboard item: the keyboard goes back to the app you were typing in.
+pub(crate) fn give_back_keyboard(app: &AppHandle) {
+    let target = RETURN_TO.lock().unwrap().take();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window(LABEL) {
+            resign(&window);
+        }
+        if let Some(pid) = target.filter(|pid| *pid != std::process::id() as i32) {
+            crate::mac_control::activate_pid(pid);
+        }
+    });
 }
 
 /// The quick-panel shortcut with the E.V notch on: opens the notch's mini chat to type in.
@@ -348,6 +396,10 @@ pub fn start(app: AppHandle) {
             }
             ticks = ticks.wrapping_add(1);
             if ticks % 10 == 0 {
+                let full = front_fullscreen();
+                if full != FULLSCREEN.swap(full, Ordering::Relaxed) {
+                    let _ = app.emit_to(LABEL, "notch-fullscreen", full);
+                }
                 let handle = app.clone();
                 let _ = app.run_on_main_thread(move || {
                     if let Some(window) = handle.get_webview_window(LABEL) {
@@ -358,7 +410,7 @@ pub fn start(app: AppHandle) {
             let Some(point) = pointer() else { continue };
             let (x, y, w, h) = *SHAPE.lock().unwrap();
             // A few points of slack below, so moving down into the card doesn't flicker it.
-            let now = point.0 >= x && point.0 <= x + w && point.1 >= y - 2.0 && point.1 <= y + h + 6.0;
+            let now = w > 0.0 && point.0 >= x && point.0 <= x + w && point.1 >= y - 2.0 && point.1 <= y + h + 6.0;
             if now != TAKES_MOUSE.load(Ordering::Relaxed) {
                 TAKES_MOUSE.store(now, Ordering::Relaxed);
                 let handle = app.clone();
@@ -470,5 +522,12 @@ mod tests {
         let (frame, width, height, has_notch, primary) = super::screen();
         println!("screen {frame:?} notch {width}×{height} has_notch={has_notch} primary_h={primary}");
         assert!(width > 0.0 && height > 0.0);
+    }
+
+    #[test]
+    #[ignore]
+    fn sees_full_screen_apps() {
+        // Prints whether the app in front is full screen on the notch's screen right now.
+        println!("front app full screen: {}", super::front_fullscreen());
     }
 }

@@ -330,6 +330,18 @@ export interface Settings {
       /** ☕ turns off by itself after this many minutes (0 = when you turn it off). */
       minutes: number;
     };
+    /** The notch hides while an app is full screen (it would cover the app's top bar), like Vorssaint's. */
+    hideInFullscreen: boolean;
+    /** Clipboard history in the notch: what you copy, kept on this Mac (passwords never). */
+    clipboard: {
+      enabled: boolean;
+      /** Opens the history from any app ("shift+command+c"). */
+      shortcut: string;
+      /** How many to keep (pinned ones don't count). */
+      limit: number;
+      /** Apps whose copies are never kept (names or bundle IDs). */
+      ignoreApps: string[];
+    };
   };
   /** DeepSeek spending: a daily limit in the account's currency (0 = no limit). */
   spending: { dailyLimit: number };

@@ -5,6 +5,8 @@ import Foundation
 // letter (fast synthetic keystrokes arrive out of order or get dropped in many apps). Whatever
 // was on the clipboard — text, images, files, every type — is put back right after.
 
+private let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
+
 @_cdecl("ev_paste")
 public func evPaste(_ text: UnsafePointer<CChar>) -> Bool {
     let string = String(cString: text)
@@ -16,6 +18,8 @@ public func evPaste(_ text: UnsafePointer<CChar>) -> Bool {
         }
         board.clearContents()
         guard board.setString(string, forType: .string) else { return }
+        // Marked as passing through, so clipboard histories (E.V's own too) don't keep it.
+        board.setData(Data(), forType: transient)
         let ours = board.changeCount
         // ⌘V with only ⌘ held: a key just let go (the dictation key, ⌥) must not change it.
         let source = CGEventSource(stateID: .hidSystemState)
@@ -37,6 +41,8 @@ public func evPaste(_ text: UnsafePointer<CChar>) -> Bool {
                 for (type, data) in pairs { item.setData(data, forType: type) }
                 return item
             }
+            // What was there before: already in any history, so not added again.
+            items.first?.setData(Data(), forType: transient)
             if !items.isEmpty { board.writeObjects(items) }
         }
     }

@@ -1,5 +1,6 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { lyricsClear, notchEnable, notchMainVisible, notchOpenMain } from "../lib/ipc";
+import { create } from "zustand";
+import { clipConfigure, lyricsClear, notchEnable, notchMainVisible, notchOpenMain } from "../lib/ipc";
 import { useChats } from "../store/chats";
 import { useSettings } from "../store/settings";
 import { useVoice } from "../store/voice";
@@ -29,6 +30,9 @@ export interface NotchState {
   chatPanels: boolean;
   lyrics: Settings["notch"]["lyrics"];
   caffeine: Settings["notch"]["caffeine"];
+  hideInFullscreen: boolean;
+  /** Clipboard history is on (the notch shows its tab). */
+  clipboard: { on: boolean; shortcut: string };
 }
 
 export type NotchRequest =
@@ -84,6 +88,8 @@ function snapshot(): NotchState {
     chatPanels: settings.notch.chatPanels,
     lyrics: settings.notch.lyrics,
     caffeine: settings.notch.caffeine,
+    hideInFullscreen: settings.notch.hideInFullscreen,
+    clipboard: { on: settings.notch.clipboard.enabled, shortcut: settings.notch.clipboard.shortcut },
   };
 }
 
@@ -151,6 +157,24 @@ function apply(settings: Settings, previous?: Settings): void {
   const wasVisible = previous ? previous.notch.chatPanels || previous.notch.mode !== "ev" : true;
   if (visible !== wasVisible) void notchMainVisible(visible).catch(() => {});
   if (previous && previous.notch.lyrics === "keep" && settings.notch.lyrics === "never") void lyricsClear().catch(() => {});
+  if (!previous || previous.notch.clipboard !== settings.notch.clipboard || previous.notch.mode !== settings.notch.mode) configureClipboard(settings);
+}
+
+/** Problems setting up clipboard history (shown in Settings → Notch). */
+export const useClipboardError = create<{ error: string }>(() => ({ error: "" }));
+
+/** Clipboard history lives in the E.V notch: on only with it. */
+function configureClipboard(settings: Settings): void {
+  const c = settings.notch.clipboard;
+  const on = c.enabled && settings.notch.mode === "ev";
+  void clipConfigure(on, c.limit, c.ignoreApps, c.shortcut || null)
+    .then(() => useClipboardError.setState({ error: "" }))
+    .catch((err) => {
+      const text = String(err);
+      useClipboardError.setState({
+        error: text.includes("PERMISSION:accessibility") ? "The shortcut needs Accessibility: System Settings → Privacy & Security → Accessibility → E.V." : text,
+      });
+    });
 }
 
 let started = false;

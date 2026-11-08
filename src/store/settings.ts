@@ -42,7 +42,10 @@ export const DEFAULT_SETTINGS: Settings = {
   approvalKeys: { approve: "control+option+a", always: "control+option+s", cancel: "control+option+d" },
   panel: { shortcut: "option+space", chatId: null },
   router: { enabled: true },
-  notch: { mode: "ev", chatPanels: true, lyrics: "keep", caffeine: { lid: false, batteryLimit: 0, minutes: 0 } },
+  notch: { mode: "ev", chatPanels: true, lyrics: "keep", caffeine: { lid: false, batteryLimit: 0, minutes: 0 },
+    hideInFullscreen: true,
+    clipboard: { enabled: true, shortcut: "shift+command+c", limit: 100, ignoreApps: ["1Password", "Bitwarden", "Keychain Access", "Passwords", "Dashlane", "LastPass"] },
+  },
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
@@ -145,6 +148,8 @@ function normalize(raw: unknown): Settings {
     chatPanels: notch.chatPanels !== false,
     lyrics: notch.lyrics === "never" ? "never" : "keep",
     caffeine: { lid: caffeine.lid === true, batteryLimit: whole(caffeine.batteryLimit, 95), minutes: whole(caffeine.minutes, 24 * 60) },
+    hideInFullscreen: notch.hideInFullscreen !== false,
+    clipboard: normalizeClipboard(notch.clipboard),
   };
   const limit = Number(input.spending?.dailyLimit);
   settings.spending = { dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 0 };
@@ -228,3 +233,15 @@ export const useSettings = create<SettingsState>((set, get) => ({
     void get().save({ ...current, recentFolders }).catch(() => {});
   },
 }));
+
+export function normalizeClipboard(input: unknown): Settings["notch"]["clipboard"] {
+  const d = DEFAULT_SETTINGS.notch.clipboard;
+  const c = (input ?? {}) as Partial<Settings["notch"]["clipboard"]>;
+  const limit = Number(c.limit);
+  return {
+    enabled: c.enabled !== false,
+    shortcut: typeof c.shortcut === "string" ? c.shortcut : d.shortcut,
+    limit: Number.isFinite(limit) && limit >= 10 ? Math.min(Math.round(limit), 1000) : d.limit,
+    ignoreApps: Array.isArray(c.ignoreApps) ? c.ignoreApps.filter((a): a is string => typeof a === "string" && a.trim() !== "") : [...d.ignoreApps],
+  };
+}

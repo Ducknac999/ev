@@ -10,6 +10,7 @@ import {
   macMedia,
   notchAnswer,
   notchDragOut,
+  notchFullscreen,
   notchGeometry,
   notchKeyboard,
   notchResize,
@@ -19,8 +20,10 @@ import {
   type NotchGeometry,
   type SongInfo,
 } from "../lib/ipc";
+import { shortcutLabel } from "../lib/shortcuts";
 import type { NotchRequest, NotchState } from "../services/notchBridge";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
+import { NotchClipboard, type ClipboardHandle } from "./NotchClipboard";
 
 /**
  * The E.V notch window (src-tauri/src/notch_window.rs). Black, over the Mac's notch, and only as
@@ -29,7 +32,7 @@ import { Icon } from "./Icon";
  * hover (or click) opens it: Chat, Music, Drop box. Everything else lives in E.V's main window.
  */
 
-type Tab = "chat" | "music" | "shelf" | "dictation";
+type Tab = "chat" | "music" | "shelf" | "clipboard" | "dictation";
 type Dictated = { text: string; at: number };
 
 type Voice =
@@ -43,6 +46,17 @@ type Files = { key: string; results: FileHit[] };
 type ShelfItem = { path: string; name: string; addedAt: number; missing?: boolean };
 
 const SHELF_KEY = "ev.shelf";
+
+const TABS: { id: Tab; icon: IconName; label: string }[] = [
+  { id: "chat", icon: "chat", label: "Chat" },
+  { id: "music", icon: "music", label: "Music" },
+  { id: "shelf", icon: "tray", label: "Drop box" },
+  { id: "clipboard", icon: "clipboard", label: "Clipboard" },
+  { id: "dictation", icon: "wave", label: "Dictation" },
+];
+/** Open, the notch is wide enough for the icons beside the camera. */
+const OPEN_W = 520;
+const SIDE_W = 168;
 const WING = 46;
 
 function request(r: NotchRequest): void {
@@ -103,6 +117,7 @@ export function Notch() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [files, setFiles] = useState<Files | null>(null);
   const [hover, setHover] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [typing, setTyping] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -128,10 +143,12 @@ export function Notch() {
       .catch(() => {});
   };
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const clipRef = useRef<ClipboardHandle>(null);
 
   useEffect(() => {
     document.documentElement.classList.add("notch-root");
     void notchGeometry().then(setGeo).catch(() => {});
+    void notchFullscreen().then(setFullscreen).catch(() => {});
     void caffeineStatus().then(setCaffeine).catch(() => {});
     const offs: Promise<() => void>[] = [
       listen<NotchState>("notch-state", (e) => setState(e.payload)),
@@ -154,6 +171,7 @@ export function Notch() {
       listen<string>("notch-withdraw", ({ payload }) => setApprovals((list) => list.filter((a) => a.id !== payload))),
       listen<Files | null>("notch-files", ({ payload }) => setFiles(payload && payload.results.length ? payload : null)),
       listen<boolean>("notch-hover", ({ payload }) => setHover(payload)),
+      listen<boolean>("notch-fullscreen", ({ payload }) => setFullscreen(payload)),
       listen("notch-open-chat", () => {
         setTab("chat");
         setPinned(true);
@@ -215,6 +233,18 @@ export function Notch() {
     inputRef.current?.blur();
     void notchKeyboard(false).catch(() => {});
   }, []);
+
+  // The clipboard shortcut (⌘⇧C): opens the Clipboard tab ready to search, or closes it.
+  const clipOpen = open && tab === "clipboard" && (pinned || typing);
+  useEffect(() => {
+    const off = listen("notch-open-clipboard", () => {
+      if (clipOpen) return close();
+      setTab("clipboard");
+      setPinned(true);
+      window.setTimeout(() => clipRef.current?.focus(), 60);
+    });
+    return () => void off.then((f) => f()).catch(() => {});
+  }, [clipOpen, close]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -349,6 +379,9 @@ export function Notch() {
   const banner = approval ? "approval" : files ? "files" : missed ? "missed" : voice ? "voice" : null;
   const wings = Boolean(song?.playing || state?.talk.on || caffeine?.on || voice?.kind === "listening");
   const mode: "idle" | "wings" | "bubble" | "open" = open ? "open" : banner ? "bubble" : wings ? "wings" : "idle";
+  // A full-screen app owns the top of the screen: the notch shows only for something to answer
+  // (an approval, what E.V said) or when you open it with a shortcut.
+  const hidden = fullscreen && state?.hideInFullscreen !== false && (mode === "idle" || mode === "wings");
 
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
@@ -367,11 +400,12 @@ export function Notch() {
 
   const target = useMemo(() => {
     const h = geo.height;
+    if (hidden) return { w: 0, h: 0 };
     if (mode === "idle") return { w: geo.width, h };
     if (mode === "wings") return { w: geo.width + WING * 2, h };
-    const w = mode === "open" ? 470 : 400;
+    const w = mode === "open" ? Math.min(600, Math.max(OPEN_W, geo.width + SIDE_W * 2)) : 400;
     return { w, h: Math.min(mode === "open" ? 420 : 300, h + contentHeight + 4) };
-  }, [geo, mode, contentHeight]);
+  }, [geo, mode, contentHeight, hidden]);
 
   // The window never moves (src-tauri/src/notch_window.rs): only the shape animates inside it.
   const shape = target;
@@ -384,7 +418,7 @@ export function Notch() {
   return (
     <div className="notch-stage">
       <div
-        className={`notch-shape mode-${mode} ${geo.hasNotch ? "has-notch" : "pill"}`}
+        className={`notch-shape mode-${mode} ${geo.hasNotch ? "has-notch" : "pill"} ${hidden ? "hidden" : ""}`}
         style={{ width: shape.w, height: shape.h, borderBottomLeftRadius: radius, borderBottomRightRadius: radius }}
         onMouseDown={() => {
           if (mode !== "open") setPinned(true);
@@ -405,8 +439,54 @@ export function Notch() {
               </div>
               <div className="notch-gap" style={{ width: geo.width }} />
               <div className="notch-wing right">
-                {caffeine?.on && <span className={`notch-cup ${caffeine.lid ? "lid" : ""}`}>☕</span>}
+                {caffeine?.on && <Icon name="cup" size={14} className={`notch-cup ${caffeine.lid ? "lid" : ""}`} />}
                 {song?.playing && <Bars live={song.playing} />}
+              </div>
+            </>
+          )}
+          {/* Open: the sections left of the camera, the switches right of it. */}
+          {mode === "open" && (
+            <>
+              <div className="notch-side left" style={{ width: (shape.w - geo.width) / 2 }}>
+                {TABS.filter((t) => t.id !== "clipboard" || state?.clipboard?.on !== false).map((t) => (
+                  <button
+                    key={t.id}
+                    className={`notch-tab ${tab === t.id ? "on" : ""}`}
+                    title={t.id === "clipboard" && state?.clipboard?.shortcut ? `${t.label} · ${shortcutLabel(state.clipboard.shortcut)}` : t.label}
+                    aria-label={t.label}
+                    onClick={() => setTab(t.id)}
+                  >
+                    <Icon name={t.icon} size={15} />
+                    {t.id === "shelf" && shelf.length > 0 && <span className="notch-badge">{shelf.length}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="notch-gap" style={{ width: geo.width }} />
+              <div className="notch-side right" style={{ width: (shape.w - geo.width) / 2 }}>
+                <button
+                  className={`notch-tab ${state?.talk.on ? "on" : ""}`}
+                  title={state?.talk.on ? "Talk mode is on — click to turn it off" : "Talk mode"}
+                  onClick={() => request({ kind: "talk", on: !state?.talk.on })}
+                >
+                  <Icon name="mic" size={15} />
+                </button>
+                <button
+                  className={`notch-tab ${caffeine?.on ? "on" : ""}`}
+                  title={caffeine?.on ? `Caffeine is on${caffeine.lid ? " (lid closed too)" : ""} — click to let the Mac sleep` : "Caffeine: keep the Mac awake"}
+                  onClick={() => void toggleCaffeine()}
+                >
+                  <Icon name="cup" size={15} />
+                </button>
+                <button
+                  className={`notch-tab ${state?.chatPanels ? "on" : ""}`}
+                  title={state?.chatPanels ? "Chat panels on — click to hide E.V's window and use the notch" : "Chat panels off — click to show E.V's window again"}
+                  onClick={() => request({ kind: "chatPanels", on: !state?.chatPanels })}
+                >
+                  <Icon name="split" size={15} />
+                </button>
+                <button className="notch-tab" title="Open E.V" onClick={() => request({ kind: "openMain" })}>
+                  <Icon name="expand" size={15} />
+                </button>
               </div>
             </>
           )}
@@ -436,41 +516,6 @@ export function Notch() {
             {!approval && files && <FilesCard files={files} onDone={() => setFiles(null)} />}
             {!approval && !files && voice && voice.kind !== "listening" && <VoiceLine voice={voice} now={tick} />}
 
-            <div className="notch-bar">
-              <div className="notch-tabs">
-                {(["chat", "music", "shelf", "dictation"] as Tab[]).map((t) => (
-                  <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-                    {t === "chat" ? "Chat" : t === "music" ? "Music" : t === "shelf" ? `Drop box${shelf.length ? ` · ${shelf.length}` : ""}` : "Dictation"}
-                  </button>
-                ))}
-              </div>
-              <div className="notch-actions">
-                <button
-                  className={`notch-icon ${state?.talk.on ? "on" : ""}`}
-                  title={state?.talk.on ? "Talk mode is on — click to turn it off" : "Talk mode"}
-                  onClick={() => request({ kind: "talk", on: !state?.talk.on })}
-                >
-                  <Icon name="mic" size={14} />
-                </button>
-                <button
-                  className={`notch-icon ${caffeine?.on ? "on" : ""}`}
-                  title={caffeine?.on ? `Caffeine is on${caffeine.lid ? " (lid closed too)" : ""} — click to let the Mac sleep` : "Caffeine: keep the Mac awake"}
-                  onClick={() => void toggleCaffeine()}
-                >
-                  ☕
-                </button>
-                <button
-                  className={`notch-icon ${state?.chatPanels ? "on" : ""}`}
-                  title={state?.chatPanels ? "Chat panels on — click to hide E.V's window and use the notch" : "Chat panels off — click to show E.V's window again"}
-                  onClick={() => request({ kind: "chatPanels", on: !state?.chatPanels })}
-                >
-                  <Icon name="split" size={14} />
-                </button>
-                <button className="notch-icon" title="Open E.V" onClick={() => request({ kind: "openMain" })}>
-                  <Icon name="expand" size={14} />
-                </button>
-              </div>
-            </div>
             {caffeineNote && <div className="notch-note">{caffeineNote}</div>}
 
             {tab === "chat" && (
@@ -559,6 +604,21 @@ export function Notch() {
                   <div className="notch-empty">Nothing is playing.</div>
                 )}
               </div>
+            )}
+
+            {tab === "clipboard" && (
+              <NotchClipboard
+                ref={clipRef}
+                shortcut={state?.clipboard?.shortcut ?? ""}
+                onTyping={(on) => {
+                  setTyping(on);
+                  if (on) void notchKeyboard(true).catch(() => {});
+                }}
+                onDone={() => {
+                  setPinned(false);
+                  setTyping(false);
+                }}
+              />
             )}
 
             {tab === "dictation" && (

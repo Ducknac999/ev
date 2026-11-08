@@ -628,6 +628,7 @@ export const calendarSync = (request: Record<string, unknown>) => invoke<void>("
 
 export type NotchGeometry = { hasNotch: boolean; width: number; height: number };
 export const notchGeometry = () => invoke<NotchGeometry>("notch_geometry");
+export const notchFullscreen = () => invoke<boolean>("notch_fullscreen");
 export const notchEnable = (on: boolean) => invoke<void>("notch_enable", { on });
 export const notchResize = (width: number, height: number) => invoke<void>("notch_resize", { width, height });
 export const notchKeyboard = (on: boolean) => invoke<void>("notch_keyboard", { on });
@@ -677,3 +678,32 @@ export const pasteText = (text: string) => invoke<void>("paste_text", { text });
 export const polishDictation = (text: string) => invoke<string>("polish_dictation", { text });
 export const dictateConfigure = (shortcut: string | null, doubleCommand: boolean) => invoke<void>("dictate_configure", { shortcut, doubleCommand });
 export const voiceScreenshot = (clipboard: boolean) => invoke<string>("voice_screenshot", { clipboard });
+
+/** One clipboard history item (src-tauri/src/clipboard.rs). */
+export interface ClipItem {
+  id: string;
+  kind: "text" | "link" | "image" | "files";
+  text?: string;
+  files?: string[];
+  /** A small PNG, base64. */
+  thumb?: string;
+  width?: number;
+  height?: number;
+  app?: string;
+  /** The app's bundle ID: its icon is in clipIcons(). */
+  bundle?: string;
+  /** `thumb` is the file's Finder icon, not a picture. */
+  fileIcon?: boolean;
+  hash: string;
+  bytes: number;
+  at: number;
+  pinned: boolean;
+}
+export const clipConfigure = (enabled: boolean, limit: number, ignoreApps: string[], shortcut: string | null) =>
+  invoke<void>("clip_configure", { enabled, limit, ignoreApps, shortcut });
+export const clipHistory = () => invoke<ClipItem[]>("clip_history");
+export const clipPick = (id: string, paste: boolean) => invoke<void>("clip_pick", { id, paste });
+export const clipPin = (id: string, pinned: boolean) => invoke<void>("clip_pin", { id, pinned });
+export const clipDelete = (id: string) => invoke<void>("clip_delete", { id });
+export const clipIcons = () => invoke<Record<string, string>>("clip_icons");
+export const clipClear = (pinnedToo: boolean) => invoke<void>("clip_clear", { pinnedToo });

@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "app:dev": "tauri dev",
     "app:build": "npm run helpers && tauri build --bundles app",
-    "helpers": "swiftc -O -target arm64-apple-macos14.0 -emit-library -module-name GideonHelpers src-tauri/helpers/capturelib.swift src-tauri/helpers/doclib.swift src-tauri/helpers/calendarlib.swift src-tauri/helpers/nowplayinglib.swift src-tauri/helpers/routerlib.swift src-tauri/helpers/pastelib.swift -Xlinker -weak_framework -Xlinker FoundationModels -o src-tauri/resources/libgideoncapture.dylib"
+    "helpers": "swiftc -O -target arm64-apple-macos14.0 -emit-library -module-name GideonHelpers src-tauri/helpers/capturelib.swift src-tauri/helpers/doclib.swift src-tauri/helpers/calendarlib.swift src-tauri/helpers/nowplayinglib.swift src-tauri/helpers/routerlib.swift src-tauri/helpers/pastelib.swift src-tauri/helpers/cliplib.swift -Xlinker -weak_framework -Xlinker FoundationModels -o src-tauri/resources/libgideoncapture.dylib"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",

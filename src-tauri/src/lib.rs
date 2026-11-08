@@ -19,6 +19,7 @@ mod passphrase;
 mod notch;
 mod notch_window;
 mod caffeine;
+mod clipboard;
 mod files;
 mod lyrics;
 mod router;
@@ -157,6 +158,7 @@ pub fn run() {
             control::start(app.handle().clone());
             notch_window::start(app.handle().clone());
             caffeine::start(app.handle().clone());
+            clipboard::start(app.handle().clone());
             if let Err(e) = tray::start(app.handle()) {
                 eprintln!("menu-bar icon: {e}");
             }
@@ -251,6 +253,7 @@ pub fn run() {
             notch::notch_message,
             notch::notch_answer,
             notch_window::notch_geometry,
+            notch_window::notch_fullscreen,
             notch_window::notch_enable,
             notch_window::notch_resize,
             notch_window::notch_keyboard,
@@ -276,6 +279,13 @@ pub fn run() {
             native_audio::native_stop,
             native_audio::native_duck,
             native_audio::paste_text,
+            clipboard::clip_configure,
+            clipboard::clip_history,
+            clipboard::clip_pick,
+            clipboard::clip_pin,
+            clipboard::clip_delete,
+            clipboard::clip_clear,
+            clipboard::clip_icons,
             tray::tray_dictations,
             mac_control::focused_text_field,
             playing::now_playing_info,

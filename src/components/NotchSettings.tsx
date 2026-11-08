@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { caffeineRemovePermission, caffeineStatus, type Caffeine } from "../lib/ipc";
+import { useClipboardError } from "../services/notchBridge";
 import type { Settings } from "../types";
+import { ComboField } from "./SettingsExtras";
 
 /** Settings → General → Notch: E.V's own notch (or Vorssaint's), chat panels, lyrics, ☕. */
 export function NotchSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
@@ -30,6 +32,10 @@ export function NotchSettings({ draft, update }: { draft: Settings; update: (fn:
           <label className="check-row">
             <input type="checkbox" checked={notch.chatPanels} onChange={(e) => update((d) => void (d.notch.chatPanels = e.target.checked))} />
             <span>Chat panels — show E.V's window. Off: E.V lives in the notch (hover it, or use Talk mode); the Dock icon still opens the window.</span>
+          </label>
+          <label className="check-row">
+            <input type="checkbox" checked={notch.hideInFullscreen} onChange={(e) => update((d) => void (d.notch.hideInFullscreen = e.target.checked))} />
+            <span>Hide the notch while an app is full screen, so it never covers the app's top bar (approvals, answers and ⌘⇧C still show it)</span>
           </label>
           <label className="field">
             <span>Lyrics</span>
@@ -82,6 +88,7 @@ export function NotchSettings({ draft, update }: { draft: Settings; update: (fn:
             </button>
           )}
           {note && <p className="settings-intro">{note}</p>}
+          <ClipboardSettings draft={draft} update={update} />
         </>
       )}
     </div>
@@ -159,5 +166,56 @@ export function DictationSettings({ draft, update }: { draft: Settings; update: 
         />
       </label>
     </div>
+  );
+}
+
+/** Settings → General → Notch → Clipboard: the history of what you copy, in the notch. */
+function ClipboardSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
+  const c = draft.notch.clipboard;
+  const error = useClipboardError((s) => s.error);
+  const others = [draft.panel.shortcut, draft.approvalKeys.approve, draft.approvalKeys.always, draft.approvalKeys.cancel, draft.voice.holdToTalk.enabled ? draft.voice.holdToTalk.shortcut : ""];
+  const set = (fn: (clip: Settings["notch"]["clipboard"]) => void) => update((d) => void fn(d.notch.clipboard));
+  return (
+    <>
+      <h4 className="settings-sub">📋 Clipboard</h4>
+      <p className="settings-intro">
+        Everything you copy — text, links, images, files — in the notch's Clipboard tab. Press the shortcut in any app, type to search, Enter pastes it where you
+        were (⌥Enter only copies, ⌘1–⌘9 paste one of the first nine). Kept on this Mac only. Passwords from password managers are never kept.
+      </p>
+      <label className="check-row">
+        <input type="checkbox" checked={c.enabled} onChange={(e) => set((clip) => void (clip.enabled = e.target.checked))} />
+        <span>Keep a history of what I copy</span>
+      </label>
+      {c.enabled && (
+        <>
+          <ComboField label="Open the history" value={c.shortcut} onChange={(combo) => set((clip) => void (clip.shortcut = combo))} />
+          {others.includes(c.shortcut) && <p className="settings-error">That combo is already used by another E.V shortcut.</p>}
+          <p className="settings-intro">
+            While E.V runs this shortcut is E.V's in every app (⌘⇧C is also Inspect Element in browsers). If another clipboard app uses the same keys, change one of them.
+          </p>
+          <label className="field">
+            <span>Keep</span>
+            <select value={c.limit} onChange={(e) => set((clip) => void (clip.limit = Number(e.target.value)))}>
+              {[25, 50, 100, 200, 500].map((n) => (
+                <option key={n} value={n}>
+                  The last {n} (pinned ones stay too)
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Never keep copies from these apps — one per line (name or bundle ID)</span>
+            <textarea
+              rows={3}
+              defaultValue={c.ignoreApps.join("\n")}
+              onBlur={(e) =>
+                set((clip) => void (clip.ignoreApps = e.target.value.split(/\n|,/).map((a) => a.trim()).filter(Boolean)))
+              }
+            />
+          </label>
+        </>
+      )}
+      {error && <p className="settings-error">{error}</p>}
+    </>
   );
 }

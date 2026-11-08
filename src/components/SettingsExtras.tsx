@@ -960,7 +960,7 @@ export function LearnedTasksSettings() {
 // ── Approval shortcuts ────────────────────────────────────────────────────────
 
 /** One key combo, recorded by pressing it. */
-function ComboField({ label, value, onChange }: { label: string; value: string; onChange: (combo: string) => void }) {
+export function ComboField({ label, value, onChange }: { label: string; value: string; onChange: (combo: string) => void }) {
   const [recording, setRecording] = useState(false);
   const [hint, setHint] = useState("");
   useEffect(() => {

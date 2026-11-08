@@ -115,6 +115,8 @@ static APPROVAL_KEYS: AtomicBool = AtomicBool::new(false);
 static APPROVAL_COMBOS: Mutex<[Option<(i64, u64)>; 3]> = Mutex::new([None, None, None]);
 /// The quick panel's shortcut (key code, modifiers): opens or closes the panel from any app.
 static PANEL_COMBO: Mutex<Option<(i64, u64)>> = Mutex::new(None);
+/// The notch clipboard's shortcut (⌘⇧C by default): opens its history from any app.
+static CLIP_COMBO: Mutex<Option<(i64, u64)>> = Mutex::new(None);
 /// While the key is held: the notch keeps showing the words heard so far.
 static HOLDING: AtomicBool = AtomicBool::new(false);
 
@@ -590,6 +592,12 @@ extern "C" fn on_event(_proxy: *mut c_void, kind: u32, event: CGEventRef, _info:
         }
         return std::ptr::null_mut();
     }
+    if kind == KEY_DOWN && unsafe { CGEventGetIntegerValueField(event, FIELD_AUTOREPEAT) } == 0 && *CLIP_COMBO.lock().unwrap() == Some((code, flags & MODIFIERS)) {
+        if let Some(app) = APP.get() {
+            crate::clipboard::shortcut(app);
+        }
+        return std::ptr::null_mut();
+    }
     // ⌘ tapped twice on its own (no other key): hands-free on or off.
     if DOUBLE_COMMAND.load(Ordering::Relaxed) {
         let mut tap = COMMAND_TAP.lock().unwrap();
@@ -733,6 +741,23 @@ pub fn panel_configure(app: AppHandle, shortcut: Option<String>) -> Result<(), S
     *PANEL_COMBO.lock().unwrap() = combo;
     if combo.is_some() {
         ensure_tap(&app)?;
+    }
+    Ok(())
+}
+
+/// The clipboard history's shortcut (a key combo), or none.
+pub(crate) fn clip_shortcut(app: &AppHandle, shortcut: Option<String>) -> Result<(), String> {
+    let _ = APP.set(app.clone());
+    let combo = match shortcut.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => None,
+        Some(s) => match parse(s)? {
+            Spec::Combo { code, flags } => Some((code, flags)),
+            Spec::Alone { .. } => return Err(format!("\"{s}\" is a single key; the clipboard shortcut needs a combo")),
+        },
+    };
+    *CLIP_COMBO.lock().unwrap() = combo;
+    if combo.is_some() {
+        ensure_tap(app)?;
     }
     Ok(())
 }
