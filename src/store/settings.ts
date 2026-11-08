@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
     turboModel: "gemini-3.1-flash-live-preview",
     holdToTalk: { enabled: false, shortcut: "control+option+space", speak: true },
     dictionary: [],
-    dictation: { enabled: true, shortcut: "rightoption", polished: true, doubleCommand: true },
+    dictation: { enabled: true, shortcut: "rightoption", polished: false, doubleCommand: true, trailingSpace: true, v2: true },
   },
   approvalKeys: { approve: "control+option+a", always: "control+option+s", cancel: "control+option+d" },
   panel: { shortcut: "option+space", chatId: null },
@@ -116,6 +116,8 @@ function normalize(raw: unknown): Settings {
   settings.voice.holdToTalk = { ...DEFAULT_SETTINGS.voice.holdToTalk, ...(input.voice?.holdToTalk ?? {}) };
   settings.voice.dictionary = strings(input.voice?.dictionary).map((w) => w.trim()).filter(Boolean).slice(0, 500);
   settings.voice.dictation = { ...DEFAULT_SETTINGS.voice.dictation, ...(input.voice?.dictation ?? {}) };
+  // Once: Polished off (it added a second or more and sometimes extra words); it stays opt-in.
+  if (!settings.voice.dictation.v2) settings.voice.dictation = { ...settings.voice.dictation, polished: false, trailingSpace: true, v2: true };
   const replies = (input.voice as { replies?: Partial<Settings["voice"]["replies"]> } | undefined)?.replies ?? {};
   settings.voice.replies = {
     typed: replies.typed === "speak" ? "speak" : "silent",

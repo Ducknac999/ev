@@ -2001,6 +2001,26 @@ pub fn capture_report(app: &str) -> String {
     format!("window_id={id:?}\nminimized={minimized:?}\napp_hidden={hidden:?}\n{}\nframe={:?}\n", lines.join("\n"), window.frame())
 }
 
+// ── Dictation ─────────────────────────────────────────────────────────────────
+
+/// Whether the focused thing takes text (for dictation's "didn't land" notice). None when it
+/// can't be told: some apps (terminals, games) don't describe their fields.
+#[tauri::command]
+pub fn focused_text_field() -> Option<bool> {
+    if !accessibility_granted() {
+        return None;
+    }
+    let el = focused_element()?;
+    let role = el.string("AXRole");
+    if role.is_empty() {
+        return None;
+    }
+    let texty = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField", "AXWebArea"].contains(&role.as_str())
+        || el.bool("AXEditable") == Some(true)
+        || el.attr("AXInsertionPointLineNumber").is_some();
+    Some(texty)
+}
+
 // ── Notch check (diagnostic) ──────────────────────────────────────────────────
 
 fn ax_text(el: &Element, depth: usize, out: &mut Vec<String>) {

@@ -23,6 +23,7 @@ mod files;
 mod lyrics;
 mod router;
 mod native_audio;
+mod tray;
 mod panel;
 mod playing;
 mod pty;
@@ -156,6 +157,9 @@ pub fn run() {
             control::start(app.handle().clone());
             notch_window::start(app.handle().clone());
             caffeine::start(app.handle().clone());
+            if let Err(e) = tray::start(app.handle()) {
+                eprintln!("menu-bar icon: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -272,6 +276,8 @@ pub fn run() {
             native_audio::native_stop,
             native_audio::native_duck,
             native_audio::paste_text,
+            tray::tray_dictations,
+            mac_control::focused_text_field,
             playing::now_playing_info,
             playing::audio_playing,
             playing::media_now,

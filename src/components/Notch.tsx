@@ -6,6 +6,7 @@ import {
   caffeineStatus,
   filesExist,
   lyricsFor,
+  macClipboard,
   macMedia,
   notchAnswer,
   notchDragOut,
@@ -28,7 +29,8 @@ import { Icon } from "./Icon";
  * hover (or click) opens it: Chat, Music, Drop box. Everything else lives in E.V's main window.
  */
 
-type Tab = "chat" | "music" | "shelf";
+type Tab = "chat" | "music" | "shelf" | "dictation";
+type Dictated = { text: string; at: number };
 
 type Voice =
   | { kind: "listening"; text: string }
@@ -113,6 +115,18 @@ export function Notch() {
   const [caffeineNote, setCaffeineNote] = useState("");
   const [shelf, setShelf] = useState<ShelfItem[]>(loadShelf);
   const [draft, setDraft] = useState("");
+  const [dictations, setDictations] = useState<Dictated[]>([]);
+  /** A dictation that may not have landed (no text field): offered to copy for a few seconds. */
+  const [missed, setMissed] = useState<{ text: string; until: number } | null>(null);
+  const [copied, setCopied] = useState("");
+  const copy = (text: string) => {
+    void macClipboard(text)
+      .then(() => {
+        setCopied(text);
+        window.setTimeout(() => setCopied(""), 1500);
+      })
+      .catch(() => {});
+  };
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -146,6 +160,10 @@ export function Notch() {
         window.setTimeout(() => inputRef.current?.focus(), 60);
       }),
       listen<Caffeine>("caffeine-changed", ({ payload }) => setCaffeine(payload)),
+      listen<Dictated[]>("notch-dictations", ({ payload }) => setDictations(payload)),
+      listen<{ text: string; missed: boolean }>("notch-dictated", ({ payload }) => {
+        if (payload.missed) setMissed({ text: payload.text, until: Date.now() + 8000 });
+      }),
     ];
     const drop = getCurrentWebview().onDragDropEvent((event) => {
       const p = event.payload;
@@ -214,7 +232,10 @@ export function Notch() {
   }, [close, pinned, hover]);
 
   // Voice moments end by themselves.
-  const tick = useTick(Boolean(voice && (voice.kind === "say" || voice.kind === "waiting" || voice.kind === "heard")), 500);
+  const tick = useTick(Boolean(missed || (voice && (voice.kind === "say" || voice.kind === "waiting" || voice.kind === "heard"))), 500);
+  useEffect(() => {
+    if (missed && tick > missed.until) setMissed(null);
+  }, [tick, missed]);
   useEffect(() => {
     if (!voice) return;
     if ((voice.kind === "say" || voice.kind === "waiting") && tick > voice.until) setVoice(null);
@@ -325,7 +346,7 @@ export function Notch() {
 
   // ── Size ──────────────────────────────────────────────────────────────────
   const approval = approvals[0] ?? null;
-  const banner = approval ? "approval" : files ? "files" : voice ? "voice" : null;
+  const banner = approval ? "approval" : files ? "files" : missed ? "missed" : voice ? "voice" : null;
   const wings = Boolean(song?.playing || state?.talk.on || caffeine?.on || voice?.kind === "listening");
   const mode: "idle" | "wings" | "bubble" | "open" = open ? "open" : banner ? "bubble" : wings ? "wings" : "idle";
 
@@ -395,6 +416,16 @@ export function Notch() {
           <div className="notch-content" ref={contentRef}>
             {banner === "approval" && approval && <ApprovalCard approval={approval} onDone={(id) => setApprovals((l) => l.filter((a) => a.id !== id))} />}
             {banner === "files" && files && <FilesCard files={files} onDone={() => setFiles(null)} />}
+            {banner === "missed" && missed && (
+              <MissedCard
+                text={missed.text}
+                copied={copied === missed.text}
+                onCopy={() => {
+                  copy(missed.text);
+                  window.setTimeout(() => setMissed(null), 900);
+                }}
+              />
+            )}
             {banner === "voice" && voice && <VoiceLine voice={voice} now={tick} />}
           </div>
         )}
@@ -407,9 +438,9 @@ export function Notch() {
 
             <div className="notch-bar">
               <div className="notch-tabs">
-                {(["chat", "music", "shelf"] as Tab[]).map((t) => (
+                {(["chat", "music", "shelf", "dictation"] as Tab[]).map((t) => (
                   <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-                    {t === "chat" ? "Chat" : t === "music" ? "Music" : `Drop box${shelf.length ? ` · ${shelf.length}` : ""}`}
+                    {t === "chat" ? "Chat" : t === "music" ? "Music" : t === "shelf" ? `Drop box${shelf.length ? ` · ${shelf.length}` : ""}` : "Dictation"}
                   </button>
                 ))}
               </div>
@@ -526,6 +557,28 @@ export function Notch() {
                   </>
                 ) : (
                   <div className="notch-empty">Nothing is playing.</div>
+                )}
+              </div>
+            )}
+
+            {tab === "dictation" && (
+              <div className="notch-dictations">
+                {dictations.length === 0 ? (
+                  <div className="notch-empty">Hold your dictation key and talk — what you say shows up here too.</div>
+                ) : (
+                  <>
+                    <button className="notch-file all" onClick={() => copy(dictations[0].text)}>
+                      {copied === dictations[0].text ? "Copied ✓" : "Copy last dictation"}
+                    </button>
+                    <div className="notch-files">
+                      {dictations.map((d) => (
+                        <button key={d.at} className="notch-dictation" title="Click to copy" onClick={() => copy(d.text)}>
+                          <span className="when">{new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                          <span className="name">{copied === d.text ? "Copied ✓" : d.text}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -664,6 +717,20 @@ function FilesCard({ files, onDone }: { files: Files; onDone: () => void }) {
         </button>
       ))}
       <div className="notch-card-sub">Say “the first one” (or its number), or click it.</div>
+    </div>
+  );
+}
+
+function MissedCard({ text, copied, onCopy }: { text: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="notch-card">
+      <div className="notch-card-title">Nowhere to type? Here's what you said</div>
+      <div className="notch-card-detail">{text}</div>
+      <div className="notch-buttons">
+        <button className="primary" onClick={onCopy}>
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
     </div>
   );
 }

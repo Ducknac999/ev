@@ -134,8 +134,13 @@ export function DictationSettings({ draft, update }: { draft: Settings; update: 
       )}
       <label className="check-row">
         <input type="checkbox" checked={d.polished} onChange={(e) => update((s) => void (s.voice.dictation.polished = e.target.checked))} />
-        <span>Polished: also fix self-corrections (“to Sam, no, to Maya” → “to Maya”) with Apple's on-device model (macOS 26)</span>
+        <span>Polished: also fix self-corrections (“to Sam, no, to Maya” → “to Maya”) with Apple's on-device model (macOS 26) — adds about half a second</span>
       </label>
+      <label className="check-row">
+        <input type="checkbox" checked={d.trailingSpace} onChange={(e) => update((s) => void (s.voice.dictation.trailingSpace = e.target.checked))} />
+        <span>Add a space after each dictation, so back-to-back ones don't run together</span>
+      </label>
+      <p className="settings-intro">Your last 20 dictations: the notch's Dictation tab and the E.V icon in the menu bar (“Copy last dictation”).</p>
       <label className="check-row">
         <input type="checkbox" checked={d.doubleCommand} onChange={(e) => update((s) => void (s.voice.dictation.doubleCommand = e.target.checked))} />
         <span>Double-tap ⌘ to turn hands-free (Talk mode) on or off</span>

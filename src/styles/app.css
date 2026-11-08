@@ -1874,3 +1874,9 @@ html.notch-root #root {
 .notch-file.all { justify-content: center; background: rgba(var(--neon-rgb), 0.12); color: var(--neon); font-weight: 600; flex: 1; }
 .notch-shelf-bar { display: flex; gap: 6px; align-items: center; }
 .settings-card h4.settings-sub { margin-top: 14px; font-size: 13px; }
+.notch-dictations { display: flex; flex-direction: column; gap: 8px; }
+.notch-dictation { display: flex; gap: 8px; align-items: baseline; text-align: left; border: 0; background: #111316; color: inherit; padding: 6px 9px; border-radius: 9px; cursor: pointer; font: inherit; }
+.notch-dictation:hover { background: #1a1d21; }
+.notch-dictation .when { flex: none; color: #8d96a1; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.notch-dictation .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.notch-file.all { border: 0; font: inherit; cursor: pointer; padding: 7px; }

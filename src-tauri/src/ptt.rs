@@ -125,17 +125,19 @@ fn emit(what: &str) {
         "down" => {
             mic::start();
             HOLDING.store(true, Ordering::SeqCst);
-            std::thread::spawn(|| {
+            let session = live::begin();
+            // While the key is held: each finished stretch of speech (cut at a pause) is turned
+            // into text in the background, so letting go only leaves the last bit to do.
+            std::thread::spawn(move || {
                 crate::notch::send_ev("listening", "", None);
-                // The words so far, about once a second (on the Mac, so it costs nothing).
-                while HOLDING.load(Ordering::SeqCst) {
-                    std::thread::sleep(std::time::Duration::from_millis(900));
-                    let (samples, rate) = mic::snapshot();
-                    if !HOLDING.load(Ordering::SeqCst) || samples.len() < rate as usize / 2 || !crate::voice_engine::parakeet_ready() {
+                while HOLDING.load(Ordering::SeqCst) && live::current(session) {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                    if !crate::voice_engine::parakeet_ready() {
                         continue;
                     }
-                    if let Ok(text) = crate::voice_engine::transcribe(&samples, rate as i32) {
-                        if HOLDING.load(Ordering::SeqCst) && !text.is_empty() {
+                    let (samples, rate) = mic::snapshot();
+                    if let Some(text) = live::step(session, &samples, rate) {
+                        if HOLDING.load(Ordering::SeqCst) {
                             crate::notch::send_ev("listening", &text, None);
                         }
                     }
@@ -154,9 +156,10 @@ fn emit(what: &str) {
                     crate::notch::send_ev("say", "Hold to talk needs E.V's speech engine: E.V Settings → Voice.", Some(5.0));
                     return;
                 }
-                let text = crate::voice_engine::transcribe(&samples, rate as i32).unwrap_or_default();
+                let text = live::finish(&samples, rate);
                 if text.is_empty() {
                     crate::notch::send_ev("heard", "Didn't catch that", None);
+                    DICTATING.store(false, Ordering::SeqCst);
                     return;
                 }
                 let dictating = DICTATING.swap(false, Ordering::SeqCst);
@@ -172,7 +175,204 @@ fn emit(what: &str) {
             HOLDING.store(false, Ordering::SeqCst);
             DICTATING.store(false, Ordering::SeqCst);
             mic::cancel();
+            live::begin();
             std::thread::spawn(|| crate::notch::send_ev("clear", "", None));
+        }
+    }
+}
+
+/// Transcribing while you talk: the recording is cut at pauses and each finished piece becomes
+/// text in the background; silence before and after speech is left out.
+mod live {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+
+    struct Live {
+        session: u64,
+        /// Samples up to here are already text.
+        done: usize,
+        text: String,
+    }
+
+    static LIVE: Mutex<Live> = Mutex::new(Live { session: 0, done: 0, text: String::new() });
+    static SESSION: AtomicU64 = AtomicU64::new(0);
+    /// One decode at a time: letting go waits for a piece that's being decoded.
+    static DECODING: Mutex<()> = Mutex::new(());
+
+    const FRAME_MS: usize = 20;
+    /// A pause this long ends a piece.
+    const PAUSE_MS: usize = 200;
+    /// Pieces are at least this long (shorter ones lose too much context).
+    const MIN_PIECE_MS: usize = 1200;
+    /// Talking this long without a pause: cut at the quietest moment anyway.
+    const MAX_PIECE_MS: usize = 5000;
+    /// Silence kept around speech, so first and last sounds aren't clipped.
+    const MARGIN_MS: usize = 150;
+
+    pub fn begin() -> u64 {
+        let session = SESSION.fetch_add(1, Ordering::SeqCst) + 1;
+        *LIVE.lock().unwrap() = Live { session, done: 0, text: String::new() };
+        session
+    }
+
+    pub fn current(session: u64) -> bool {
+        SESSION.load(Ordering::SeqCst) == session
+    }
+
+    fn levels(samples: &[f32], rate: u32) -> (Vec<f32>, usize) {
+        let frame = (rate as usize * FRAME_MS / 1000).max(1);
+        (samples.chunks(frame).map(|c| (c.iter().map(|s| s * s).sum::<f32>() / c.len() as f32).sqrt()).collect(), frame)
+    }
+
+    /// Speech louder than this counts (the room's own noise, measured, times three).
+    fn threshold(levels: &[f32]) -> f32 {
+        let mut sorted = levels.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let floor = sorted.get(sorted.len() * 15 / 100).copied().unwrap_or(0.0);
+        (floor * 3.0).max(0.008)
+    }
+
+    /// Where speech starts and ends in `samples` (with a little margin), or None when silent.
+    pub fn speech(samples: &[f32], rate: u32) -> Option<(usize, usize)> {
+        let (levels, frame) = levels(samples, rate);
+        let t = threshold(&levels);
+        let first = levels.iter().position(|l| *l > t)?;
+        let last = levels.iter().rposition(|l| *l > t)?;
+        let margin = MARGIN_MS / FRAME_MS;
+        Some((first.saturating_sub(margin) * frame, ((last + 1 + margin) * frame).min(samples.len())))
+    }
+
+    /// A pause to cut at, after `from`, with enough speech before it.
+    fn cut(samples: &[f32], rate: u32, from: usize) -> Option<usize> {
+        let (all, frame) = levels(samples, rate);
+        let t = threshold(&all);
+        let start = from / frame;
+        let need = PAUSE_MS / FRAME_MS;
+        let min_frames = MIN_PIECE_MS / FRAME_MS;
+        let mut quiet = 0;
+        let mut spoke = false;
+        // The newest frames may still be filling: leave the last one out.
+        for (i, level) in all.iter().enumerate().take(all.len().saturating_sub(1)).skip(start) {
+            if *level > t {
+                spoke = true;
+                quiet = 0;
+            } else {
+                quiet += 1;
+                if spoke && quiet >= need && i + 1 - start >= min_frames {
+                    return Some((i + 1 - quiet / 2) * frame);
+                }
+            }
+        }
+        // No pause for a long stretch: the quietest 100 ms in its second half.
+        let usable = all.len().saturating_sub(1);
+        if usable.saturating_sub(start) >= MAX_PIECE_MS / FRAME_MS {
+            let window = 5;
+            let from = start + (usable - start) / 2;
+            let best = (from..usable.saturating_sub(window))
+                .min_by(|a, b| {
+                    let sa: f32 = all[*a..*a + window].iter().sum();
+                    let sb: f32 = all[*b..*b + window].iter().sum();
+                    sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            return Some((best + window / 2) * frame);
+        }
+        None
+    }
+
+    fn decode(piece: &[f32], rate: u32) -> String {
+        let Some((a, b)) = speech(piece, rate) else { return String::new() };
+        crate::voice_engine::transcribe(&piece[a..b], rate as i32).unwrap_or_default()
+    }
+
+    /// While held: turns the next finished piece into text. Returns the words so far when it did.
+    pub fn step(session: u64, samples: &[f32], rate: u32) -> Option<String> {
+        let from = {
+            let live = LIVE.lock().unwrap();
+            if live.session != session {
+                return None;
+            }
+            live.done
+        };
+        let end = cut(samples, rate, from)?;
+        let _busy = DECODING.lock().unwrap();
+        let text = decode(&samples[from..end], rate);
+        let mut live = LIVE.lock().unwrap();
+        if live.session != session || live.done != from {
+            return None;
+        }
+        live.done = end;
+        if !text.is_empty() {
+            if !live.text.is_empty() {
+                live.text.push(' ');
+            }
+            live.text.push_str(&text);
+        }
+        Some(live.text.clone())
+    }
+
+    /// Let go: the pieces already done, plus the rest.
+    pub fn finish(samples: &[f32], rate: u32) -> String {
+        let _busy = DECODING.lock().unwrap();
+        let (done, mut text) = {
+            let mut live = LIVE.lock().unwrap();
+            let out = (live.done.min(samples.len()), std::mem::take(&mut live.text));
+            live.done = 0;
+            out
+        };
+        let rest = decode(&samples[done..], rate);
+        if !rest.is_empty() {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push_str(&rest);
+        }
+        text.trim().to_string()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn cuts_at_pauses_and_finds_speech() {
+            let rate = 16_000;
+            let tone = |ms: usize| (0..rate as usize * ms / 1000).map(|i| (i as f32 * 0.05).sin() * 0.3).collect::<Vec<f32>>();
+            let quiet = |ms: usize| vec![0.0005f32; rate as usize * ms / 1000];
+            let mut audio = quiet(300);
+            audio.extend(tone(1800));
+            audio.extend(quiet(600));
+            audio.extend(tone(800));
+            audio.extend(quiet(100));
+            let at = super::cut(&audio, rate, 0).expect("a pause after the first stretch");
+            let seconds = at as f32 / rate as f32;
+            assert!(seconds > 2.1 && seconds < 2.8, "cut at {seconds}s");
+            // The second stretch is too short to cut on its own: it waits for the release.
+            assert!(super::cut(&audio, rate, at).is_none());
+            let (a, b) = super::speech(&audio, rate).unwrap();
+            assert!(a as f32 / rate as f32 > 0.1 && (b as f32 / rate as f32) < 3.7);
+            assert!(super::speech(&quiet(500), rate).is_none());
+        }
+ 
+        #[test]
+        #[ignore]
+        fn faster_on_real_speech() {
+            let dir = std::env::var("EV_WAVS").unwrap();
+            let bytes = std::fs::read(format!("{dir}/q3.wav")).unwrap();
+            let (samples, rate) = crate::voice_engine::decode_wav(&bytes).unwrap();
+            let rate = rate as u32;
+            let _ = crate::voice_engine::transcribe(&samples[..rate as usize], rate as i32);
+            let t = std::time::Instant::now();
+            let whole = crate::voice_engine::transcribe(&samples, rate as i32).unwrap();
+            println!("all at once on release: {:?} → {whole:?}", t.elapsed());
+            // As if held: pieces decoded as the audio arrives, every 250 ms.
+            let session = super::begin();
+            let step = rate as usize / 4;
+            let mut end = step;
+            while end < samples.len() {
+                super::step(session, &samples[..end], rate);
+                end += step;
+            }
+            let t = std::time::Instant::now();
+            let text = super::finish(&samples, rate);
+            println!("piece by piece, left on release: {:?} → {text:?}", t.elapsed());
         }
     }
 }
