@@ -184,6 +184,9 @@ fn engines() -> &'static Engines {
 }
 
 fn threads() -> i32 {
+    if let Some(n) = std::env::var("EV_ASR_THREADS").ok().and_then(|v| v.parse().ok()) {
+        return n;
+    }
     std::thread::available_parallelism().map(|n| n.get().min(4) as i32).unwrap_or(4)
 }
 
@@ -250,6 +253,37 @@ fn new_vad() -> Result<VoiceActivityDetector, String> {
     c.sample_rate = SAMPLE_RATE;
     c.num_threads = 1;
     VoiceActivityDetector::create(&c, 30.0).ok_or_else(|| "could not load the speech detector".into())
+}
+
+/// Where speech starts and ends in a recording (Silero, not loudness: soft starts like the "b"
+/// in "before" count as speech), with `margin_ms` kept on each side. None when there's no speech
+/// or the detector isn't installed.
+pub fn speech_bounds(samples: &[f32], rate: i32, margin_ms: usize) -> Option<(usize, usize)> {
+    let vad = new_vad().ok()?;
+    let step = rate as f64 / SAMPLE_RATE as f64;
+    let at16: Vec<f32> = if rate == SAMPLE_RATE {
+        samples.to_vec()
+    } else {
+        let n = (samples.len() as f64 / step) as usize;
+        (0..n).map(|i| samples[((i as f64 * step) as usize).min(samples.len() - 1)]).collect()
+    };
+    for chunk in at16.chunks(512) {
+        vad.accept_waveform(chunk);
+    }
+    vad.flush();
+    let (mut first, mut last) = (usize::MAX, 0usize);
+    while let Some(segment) = vad.front() {
+        let start = segment.start().max(0) as usize;
+        first = first.min(start);
+        last = last.max(start + segment.samples().len());
+        vad.pop();
+    }
+    if first == usize::MAX {
+        return None;
+    }
+    let margin = SAMPLE_RATE as usize * margin_ms / 1000;
+    let to_rate = |i: usize| ((i as f64 * step) as usize).min(samples.len());
+    Some((to_rate(first.saturating_sub(margin)), to_rate(last + margin)))
 }
 
 // ── Speech detection ──────────────────────────────────────────────────────────

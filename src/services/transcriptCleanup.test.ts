@@ -13,7 +13,8 @@ describe("cleaning what was heard", () => {
   });
 
   it("writes the marks you say when dictating, not in requests", () => {
-    expect(cleanTranscript("hi Maya comma see you at 6 period new line thanks", { mode: "dictation" })).toBe("Hi Maya, see you at 6.\nThanks");
+    expect(cleanTranscript("hi Maya comma see you at 6 period new line thanks", { mode: "dictation" })).toBe("Hi Maya, see you at 6.\nthanks");
+    expect(cleanTranscript("No, before we go ahead, go ahead and talk about it")).toBe("No, before we go ahead, go ahead and talk about it");
     expect(cleanTranscript("what does period mean")).toBe("What does period mean");
   });
 

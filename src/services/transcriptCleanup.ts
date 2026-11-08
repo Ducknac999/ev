@@ -27,8 +27,9 @@ function selfCorrections(text: string): string {
 }
 
 function stutters(text: string): string {
-  // "can you can you" → "can you", "I I think" → "I think" (1–3 words said twice in a row).
-  return text.replace(/\b((?:[a-z']+\s+){0,2}[a-z']+)(?:[\s,]+\1\b)+/gi, (whole, phrase: string) => (MEANT_TWICE.has(phrase.toLowerCase()) ? whole : phrase));
+  // "can you can you" → "can you", "I I think" → "I think": 1–3 words said twice straight away.
+  // A comma or pause between them ("go ahead, go ahead") means it was meant: left alone.
+  return text.replace(/\b((?:[a-z']+ ){0,2}[a-z']+)(?: \1\b)+/gi, (whole, phrase: string) => (MEANT_TWICE.has(phrase.toLowerCase()) ? whole : phrase));
 }
 
 /** Roughly how it sounds: "Vor Saint" and "Vorssaint" → "vorsaint", "duck nack" and "Ducknac" → "duknak". */
@@ -88,8 +89,8 @@ function tidy(text: string): string {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/ *\n */g, "\n")
     .trim()
-    .replace(/^[a-z]/, (c) => c.toUpperCase())
-    .replace(/([.!?]\s+|\n)([a-z])/g, (_, a: string, b: string) => a + b.toUpperCase());
+    // Only the very first letter: Parakeet already writes capitals where they belong.
+    .replace(/^[a-z]/, (c) => c.toUpperCase());
 }
 
 export type CleanupMode = "request" | "dictation";

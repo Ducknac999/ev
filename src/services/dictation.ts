@@ -14,7 +14,8 @@ import { toggleTalkMode } from "./voiceControl";
  * paste had nowhere to land the notch offers it to copy. No AI service, no tokens.
  */
 
-export type Dictated = { text: string; at: number };
+/** `raw`: what Parakeet heard, before the clean-up (to see where a word went if one goes missing). */
+export type Dictated = { text: string; raw?: string; at: number };
 
 const HISTORY_KEY = "ev.dictations";
 const KEEP = 20;
@@ -27,8 +28,8 @@ export function dictationHistory(): Dictated[] {
   }
 }
 
-function remember(text: string): void {
-  const list = [{ text, at: Date.now() }, ...dictationHistory()].slice(0, KEEP);
+function remember(text: string, raw: string): void {
+  const list = [{ text, raw, at: Date.now() }, ...dictationHistory()].slice(0, KEEP);
   globalThis.localStorage?.setItem(HISTORY_KEY, JSON.stringify(list));
   shareHistory(list);
 }
@@ -89,7 +90,7 @@ export function startDictation(): void {
     if (!raw) return;
     const text = await dictationText(raw);
     if (!text) return;
-    remember(text);
+    remember(text, raw);
     const { trailingSpace } = useSettings.getState().settings.voice.dictation;
     const pasted = trailingSpace && !/\s$/.test(text) ? `${text} ` : text;
     // Is there somewhere to type? (Read before pasting; some apps don't say, so it's only a hint.)
