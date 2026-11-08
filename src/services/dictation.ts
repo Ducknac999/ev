@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { dictateConfigure, macType, notchMessage, polishDictation, voiceEngineWarm } from "../lib/ipc";
+import { dictateConfigure, notchMessage, pasteText, polishDictation, voiceEngineWarm } from "../lib/ipc";
 import { useSettings } from "../store/settings";
 import { cleanTranscript } from "./transcriptCleanup";
 import { toggleTalkMode } from "./voiceControl";
@@ -8,7 +8,7 @@ import { toggleTalkMode } from "./voiceControl";
  * Dictation into any app: hold the dictation key (Right Option by default), talk, let go. Parakeet
  * turns it into text on the Mac, the clean-up tidies it (fillers, stutters, your dictionary,
  * "comma" / "new line"), Apple's on-device model fixes self-corrections when "polished" is on,
- * and the words are typed where your cursor is — Claude Code, Cursor, Slack, Mail, anywhere.
+ * and the words are pasted where your cursor is — Claude Code, Cursor, Slack, Mail, anywhere.
  * No AI service, no tokens. Double-tap ⌘ turns hands-free (Talk mode) on or off.
  */
 
@@ -50,8 +50,9 @@ export function startDictation(): void {
     if (!raw) return;
     const text = await dictationText(raw);
     try {
-      // Typed into whatever has the cursor (an empty app = the focused field, wherever it is).
-      await macType(text, "", true);
+      // Pasted in one go where the cursor is, like Handy (never typed letter by letter, which
+      // scrambles in many apps); the clipboard comes back right after.
+      await pasteText(text);
       lastTyped = text;
       void notchMessage("clear", "").catch(() => {});
     } catch {

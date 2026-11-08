@@ -1,4 +1,4 @@
-import { macFront, macKey, macMedia, macOpen, macSystem, macType, macClick, voiceScreenshot } from "../lib/ipc";
+import { macFront, macKey, macMedia, macOpen, macSystem, macClick, pasteText, voiceScreenshot } from "../lib/ipc";
 import { useSettings } from "../store/settings";
 import { fileRequest, findFile, parsePick, pickFile } from "./filePicker";
 import { solveSpoken } from "./spokenMath";
@@ -147,7 +147,7 @@ export async function runQuickCommand(command: QuickCommand): Promise<string | {
     case "type": {
       const { dictationText } = await import("./dictation");
       const text = await dictationText(command.text);
-      await macType(text, "", true);
+      await pasteText(text);
       return `Typed: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
     }
     case "key":

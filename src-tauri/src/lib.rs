@@ -22,6 +22,7 @@ mod caffeine;
 mod files;
 mod lyrics;
 mod router;
+mod native_audio;
 mod panel;
 mod playing;
 mod pty;
@@ -264,6 +265,13 @@ pub fn run() {
             router::route_request,
             router::route_prewarm,
             router::polish_dictation,
+            native_audio::native_mic_start,
+            native_audio::native_mic_stop,
+            native_audio::native_levels,
+            native_audio::native_play,
+            native_audio::native_stop,
+            native_audio::native_duck,
+            native_audio::paste_text,
             playing::now_playing_info,
             playing::audio_playing,
             playing::media_now,

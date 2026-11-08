@@ -1,6 +1,10 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
+
 /**
- * Single shared AudioContext with two analysers: microphone input and synthesized speech
- * output. The orb samples both every frame.
+ * E.V's ears and voice. Native (src-tauri/src/native_audio.rs) by default: macOS's web engine
+ * won't really start the mic or play sound until E.V's page has been clicked once, so Talk mode
+ * started from another app half-worked. The web path (a shared AudioContext) stays for echo
+ * cancellation (macOS voice processing), Gemini Live streaming, and as a fallback.
  */
 /** `playing`: what E.V was playing at the same moment (for echo cancellation). */
 type FrameListener = (samples: Float32Array, sampleRate: number, playing: Float32Array | null) => void;
@@ -26,6 +30,12 @@ class AudioEngine {
   private deviceChanged = false;
   private echo = false;
   private watching = false;
+  /** The native mic is running (frames come from Rust). */
+  private nativeMic = false;
+  private nativeMicLevel = 0;
+  private nativeOutLevel = 0;
+  private nativePlaying = false;
+  private levelTimer: number | null = null;
 
   context(): AudioContext {
     if (!this.watching && typeof navigator !== "undefined" && navigator.mediaDevices?.addEventListener) {
@@ -46,7 +56,26 @@ class AudioEngine {
   }
 
   get micActive(): boolean {
-    return this.micStream !== null;
+    return this.micStream !== null || this.nativeMic;
+  }
+
+  /** The native mic: 16 kHz frames, each led by E.V's own voice level at that moment. */
+  private async startNativeMic(): Promise<boolean> {
+    const channel = new Channel<ArrayBuffer>();
+    channel.onmessage = (data) => {
+      if (!this.nativeMic) return;
+      const all = new Float32Array(data instanceof ArrayBuffer ? data : (data as unknown as ArrayBufferLike));
+      this.nativeOutLevel = all[0] ?? 0;
+      const samples = all.slice(1);
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+      this.nativeMicLevel = Math.min(1, Math.sqrt(sum / Math.max(1, samples.length)) * 4);
+      for (const listener of this.frameListeners) listener(samples, 16_000, null);
+    };
+    this.nativeMic = true;
+    const ok = await invoke<boolean>("native_mic_start", { channel }).catch(() => false);
+    if (!ok) this.nativeMic = false;
+    return ok;
   }
 
   /**
@@ -55,7 +84,8 @@ class AudioEngine {
    */
   async startMic(echo = false): Promise<void> {
     this.echo = echo;
-    if (this.micStream) return;
+    if (this.micStream || this.nativeMic) return;
+    if (!echo && (await this.startNativeMic())) return;
     const ctx = this.context();
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: echo, noiseSuppression: echo, autoGainControl: echo, channelCount: 1 },
@@ -86,6 +116,11 @@ class AudioEngine {
   }
 
   stopMic(): void {
+    if (this.nativeMic) {
+      this.nativeMic = false;
+      this.nativeMicLevel = 0;
+      void invoke("native_mic_stop").catch(() => {});
+    }
     if (this.merger) this.voiceGain?.disconnect(this.merger);
     this.merger?.disconnect();
     this.merger = null;
@@ -108,12 +143,12 @@ class AudioEngine {
 
   /** RMS level of the microphone, normalised to roughly 0..1. */
   micLevel(): number {
-    return this.rms(this.micAnalyser);
+    return this.nativeMic ? this.nativeMicLevel : this.rms(this.micAnalyser);
   }
 
   /** RMS level of speech playback, normalised to roughly 0..1. */
   outputLevel(): number {
-    return this.rms(this.outAnalyser);
+    return this.nativePlaying ? this.nativeOutLevel : this.rms(this.outAnalyser);
   }
 
   private rms(analyser: AnalyserNode | null): number {
@@ -163,8 +198,37 @@ class AudioEngine {
     if (hadMic) await this.startMic(this.echo).catch(() => {});
   }
 
-  /** Plays encoded audio through the output analyser; resolves when playback ends or stops. */
+  /** Plays E.V's voice (WAV) natively; resolves when it ends or is stopped. Web audio if that fails. */
   async play(encoded: ArrayBuffer): Promise<void> {
+    this.nativePlaying = true;
+    // Without the mic running, the voice level for the orb is read a few times a second.
+    if (!this.nativeMic && this.levelTimer === null) {
+      this.levelTimer = window.setInterval(() => {
+        void invoke<[number, number]>("native_levels")
+          .then(([, out]) => (this.nativeOutLevel = out))
+          .catch(() => {});
+      }, 80);
+    }
+    const started = Date.now();
+    try {
+      // Every answer starts at full volume (talking over E.V turns it down only while you talk).
+      await invoke("native_duck", { on: false }).catch(() => {});
+      await invoke("native_play", new Uint8Array(encoded));
+      voiceLog({ event: "native play", seconds: Math.round((Date.now() - started) / 100) / 10 });
+      return;
+    } catch (err) {
+      voiceLog({ event: "native play failed", error: String(err).slice(0, 160) });
+    } finally {
+      this.nativePlaying = false;
+      this.nativeOutLevel = 0;
+      if (this.levelTimer !== null) window.clearInterval(this.levelTimer);
+      this.levelTimer = null;
+    }
+    await this.playWeb(encoded);
+  }
+
+  /** The web path (the page's AudioContext). */
+  private async playWeb(encoded: ArrayBuffer): Promise<void> {
     const ctx = await this.ready();
     const buffer = await ctx.decodeAudioData(encoded.slice(0));
     this.stopPlayback();
@@ -237,11 +301,13 @@ class AudioEngine {
 
   /** Drops E.V's voice to a whisper (or back to normal) within a few milliseconds. */
   duck(on: boolean): void {
+    void invoke("native_duck", { on }).catch(() => {});
     if (!this.ctx || !this.voiceGain) return;
     this.voiceGain.gain.setTargetAtTime(on ? 0.1 : 1, this.ctx.currentTime, 0.02);
   }
 
   stopPlayback(): void {
+    if (this.nativePlaying) void invoke("native_stop").catch(() => {});
     for (const source of this.streamed) {
       try {
         source.stop();
