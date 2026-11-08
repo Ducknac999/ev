@@ -40,6 +40,38 @@ pub async fn route_request(request: serde_json::Value) -> serde_json::Value {
     .unwrap_or_else(|_| serde_json::json!({ "available": false, "tool": "none" }))
 }
 
+/// Dictation's polished clean-up (helpers/routerlib.swift `ev_polish`): the text back unchanged
+/// when this Mac has no on-device model.
+#[tauri::command]
+pub async fn polish_dictation(text: String) -> String {
+    tokio::task::spawn_blocking(move || {
+        static POLISH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        let f = *POLISH.get_or_init(|| {
+            let Some(path) = crate::doc::lib_path() else { return 0 };
+            let Ok(c_path) = std::ffi::CString::new(path.display().to_string()) else { return 0 };
+            let handle = unsafe { libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+            if handle.is_null() {
+                return 0;
+            }
+            unsafe { libc::dlsym(handle, c"ev_polish".as_ptr()) as usize }
+        });
+        let Some((_, free, _)) = lib() else { return text };
+        if f == 0 {
+            return text;
+        }
+        let Ok(input) = std::ffi::CString::new(text.clone()) else { return text };
+        let raw = unsafe { std::mem::transmute::<usize, RouteFn>(f)(input.as_ptr()) };
+        if raw.is_null() {
+            return text;
+        }
+        let out = unsafe { std::ffi::CStr::from_ptr(raw) }.to_string_lossy().into_owned();
+        unsafe { free(raw) };
+        out
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Loads the on-device model ahead of the first request. False when this Mac doesn't have it.
 #[tauri::command]
 pub async fn route_prewarm() -> bool {
@@ -76,5 +108,24 @@ mod bench {
             }
         }
         println!("score {ok}/{} · wrong instant actions {wrong} · sent to AI unnecessarily {missed} · avg {} ms", phrases.len(), ms / phrases.len() as u64);
+    }
+}
+
+#[cfg(test)]
+mod polish_check {
+    #[test]
+    #[ignore]
+    fn polish_samples() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        for text in [
+            "Can you open my resume and then email it to Vorssaint by Friday, actually Thursday.",
+            "Send the report to Sam, no, to Maya, by tonight.",
+            "Hi Maya, see you at 6. Thanks",
+            "I think we should we should move the meeting to next week",
+        ] {
+            let t = std::time::Instant::now();
+            let out = rt.block_on(super::polish_dictation(text.to_string()));
+            println!("{:?}\n  → {out:?} ({:?})", text, t.elapsed());
+        }
     }
 }

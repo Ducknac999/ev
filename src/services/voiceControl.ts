@@ -1,3 +1,4 @@
+import { cleanTranscript } from "./transcriptCleanup";
 import { hushToNotch, notchBusyFor, sayLastIfAsked } from "./announce";
 import { audioEngine } from "../audio/engine";
 import { speechQueue } from "../audio/speech";
@@ -317,6 +318,8 @@ class TalkLoop {
         await hearForApproval(heard);
         return;
       }
+      // Tidied on the Mac before anything sees it: no "um", stutters or misheard names (transcriptCleanup.ts).
+      if (heard) heard = cleanTranscript(heard, { dictionary: useSettings.getState().settings.voice.dictionary });
       const text = [this.held?.text, heard].filter(Boolean).join(" ");
       const startedAt = this.held?.startedAt ?? spokenAt;
       const level = Math.max(this.held?.level ?? -100, speechLevel(samples, rate));
@@ -780,7 +783,8 @@ class Dictation {
     useVoice.getState().setDictating(null);
     releaseMicIfIdle();
     if (samples.length < this.rate * 0.3) return "";
-    return transcribe(samples, this.rate);
+    const { dictionary } = useSettings.getState().settings.voice;
+    return cleanTranscript(await transcribe(samples, this.rate), { dictionary, mode: "dictation" });
   }
 
   cancel(): void {

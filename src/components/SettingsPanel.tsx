@@ -10,7 +10,7 @@ import { ConnectionsSettings } from "./ConnectionsSettings";
 import { GideonBrowserSettings } from "./GideonBrowserSettings";
 import { ClaudePlanUsage } from "./ClaudePlanUsage";
 import { SpendingSettings } from "./SpendingSettings";
-import { InstantSettings, NotchSettings } from "./NotchSettings";
+import { DictationSettings, InstantSettings, NotchSettings } from "./NotchSettings";
 import { UpdateSettings } from "./UpdateSettings";
 import { MoveInCard } from "./MoveInCard";
 import {
@@ -183,6 +183,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {tab === "voice" && (
             <>
             <VoiceEngineSettings draft={draft} update={update} />
+            <DictationSettings draft={draft} update={update} />
             <div className="settings-card">
               <h4>Replies: when E.V talks</h4>
               <p className="settings-intro">One rule everywhere: answered the way you asked. Under each answer E.V notes why it did or didn't speak.</p>

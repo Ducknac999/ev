@@ -381,7 +381,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   }
 
   // Instant commands ("pause the music", "volume 30", "open Discord"): no AI call at all.
-  const quick = attachments ? null : parseQuickCommand(content);
+  const quick = attachments ? null : parseQuickCommand(content, Boolean(options.announce));
   if (quick) {
     try {
       const result = await runQuickCommand(quick);

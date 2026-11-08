@@ -105,3 +105,54 @@ export function InstantSettings({ draft, update }: { draft: Settings; update: (f
     </div>
   );
 }
+
+/** Settings → Voice → Dictation: typing by voice into any app, the clean-up, your dictionary. */
+export function DictationSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
+  const d = draft.voice.dictation;
+  return (
+    <div className="settings-card">
+      <h4>Dictation · clean-up · dictionary</h4>
+      <p className="settings-intro">
+        Everything you say is turned into text on this Mac (Parakeet) and tidied before anything sees it — no “um”, no stutters, your spellings for names — so
+        requests are shorter and cost fewer tokens. Nothing is sent anywhere for this.
+      </p>
+      <label className="check-row">
+        <input type="checkbox" checked={d.enabled} onChange={(e) => update((s) => void (s.voice.dictation.enabled = e.target.checked))} />
+        <span>Hold a key to dictate into any app — the words are typed where your cursor is</span>
+      </label>
+      {d.enabled && (
+        <label className="field">
+          <span>Dictation key (hold it, talk, let go)</span>
+          <select value={d.shortcut} onChange={(e) => update((s) => void (s.voice.dictation.shortcut = e.target.value))}>
+            <option value="rightoption">Right Option ⌥</option>
+            <option value="rightcommand">Right Command ⌘</option>
+            <option value="rightcontrol">Right Control ⌃</option>
+            <option value="fn">fn / 🌐 (set System Settings → Keyboard → “Press 🌐 key to” → Do Nothing)</option>
+            <option value="control+option+d">⌃⌥D</option>
+          </select>
+        </label>
+      )}
+      <label className="check-row">
+        <input type="checkbox" checked={d.polished} onChange={(e) => update((s) => void (s.voice.dictation.polished = e.target.checked))} />
+        <span>Polished: also fix self-corrections (“to Sam, no, to Maya” → “to Maya”) with Apple's on-device model (macOS 26)</span>
+      </label>
+      <label className="check-row">
+        <input type="checkbox" checked={d.doubleCommand} onChange={(e) => update((s) => void (s.voice.dictation.doubleCommand = e.target.checked))} />
+        <span>Double-tap ⌘ to turn hands-free (Talk mode) on or off</span>
+      </label>
+      <p className="settings-intro">
+        Hands-free, say: “type …” · “send it” · “new line” · “delete that” · “click Submit” · “take a screenshot” (or “… into Slack”) · “add Vorssaint to my
+        dictionary”. While dictating: “comma”, “period”, “question mark”, “new line”, “new paragraph”.
+      </p>
+      <label className="field">
+        <span>Your dictionary — names and words, one per line</span>
+        <textarea
+          rows={4}
+          defaultValue={draft.voice.dictionary.join("\n")}
+          placeholder={"Vorssaint\nDucknac\nE.V"}
+          onBlur={(e) => update((s) => void (s.voice.dictionary = e.target.value.split(/\n|,/).map((w) => w.trim()).filter(Boolean)))}
+        />
+      </label>
+    </div>
+  );
+}

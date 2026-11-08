@@ -79,6 +79,10 @@ pub const VOICES: &[(&str, &str, i32, f32)] = &[
 ];
 
 pub fn models_dir() -> PathBuf {
+    #[cfg(test)]
+    if let Ok(dir) = std::env::var("EV_MODELS") {
+        return PathBuf::from(dir);
+    }
     home_dir().join("Library/Application Support/com.ducknac.ev/models")
 }
 
@@ -711,4 +715,22 @@ fn decode_b64(input: &str) -> Result<Vec<u8>, String> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod speed {
+    #[test]
+    #[ignore]
+    fn parakeet_speed() {
+        let dir = std::env::var("EV_WAVS").unwrap();
+        for name in ["q1.wav", "q2.wav"] {
+            let bytes = std::fs::read(format!("{dir}/{name}")).unwrap();
+            let (samples, rate) = super::decode_wav(&bytes).unwrap();
+            for round in 0..3 {
+                let t = std::time::Instant::now();
+                let text = super::transcribe(&samples, rate).unwrap();
+                println!("{name} round {round}: {:?} ({:.2}s audio) → {text:?}", t.elapsed(), samples.len() as f32 / rate as f32);
+            }
+        }
+    }
 }

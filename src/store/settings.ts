@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
     turboVoice: "Despina",
     turboModel: "gemini-3.1-flash-live-preview",
     holdToTalk: { enabled: false, shortcut: "control+option+space", speak: true },
+    dictionary: [],
+    dictation: { enabled: true, shortcut: "rightoption", polished: true, doubleCommand: true },
   },
   approvalKeys: { approve: "control+option+a", always: "control+option+s", cancel: "control+option+d" },
   panel: { shortcut: "option+space", chatId: null },
@@ -112,6 +114,8 @@ function normalize(raw: unknown): Settings {
   };
   settings.voice = { ...settings.voice, ...(input.voice ?? {}) };
   settings.voice.holdToTalk = { ...DEFAULT_SETTINGS.voice.holdToTalk, ...(input.voice?.holdToTalk ?? {}) };
+  settings.voice.dictionary = strings(input.voice?.dictionary).map((w) => w.trim()).filter(Boolean).slice(0, 500);
+  settings.voice.dictation = { ...DEFAULT_SETTINGS.voice.dictation, ...(input.voice?.dictation ?? {}) };
   const replies = (input.voice as { replies?: Partial<Settings["voice"]["replies"]> } | undefined)?.replies ?? {};
   settings.voice.replies = {
     typed: replies.typed === "speak" ? "speak" : "silent",

@@ -207,3 +207,42 @@ public func evRoutePrewarm() -> Bool {
 public func evRouteFree(_ pointer: UnsafeMutablePointer<CChar>?) {
     free(pointer)
 }
+
+#if canImport(FoundationModels)
+@available(macOS 26.0, *)
+private enum Polisher {
+    static let instructions = """
+    You tidy dictated text. Keep the speaker's own words, order and meaning. Only: apply their self-corrections ("Friday, actually Thursday" → "Thursday"; "send it to Sam, no, to Maya" → "send it to Maya"), drop false starts and repeated words, and fix punctuation and capitals. Never add, answer, summarize or explain anything. Reply with the tidied text only.
+    """
+    static func polish(_ text: String) async throws -> String {
+        let session = LanguageModelSession(instructions: instructions)
+        let r = try await session.respond(to: text, options: GenerationOptions(temperature: 0))
+        return r.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+#endif
+
+/// Dictation's "polished" clean-up with Apple's on-device model; returns the text unchanged when
+/// the model isn't there, is slow (over 3 s), or its result strays from what was said.
+@_cdecl("ev_polish")
+public func evPolish(_ text: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
+    let input = String(cString: text)
+    #if canImport(FoundationModels)
+    if #available(macOS 26.0, *), Router.available, input.count > 12 {
+        var output = input
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            if let polished = try? await Polisher.polish(input), !polished.isEmpty {
+                // A tidy-up keeps about the same words: anything much longer or shorter is the model
+                // doing more than it was asked, so the plain clean-up stands.
+                let ratio = Double(polished.count) / Double(max(1, input.count))
+                if ratio > 0.5 && ratio < 1.25 { output = polished }
+            }
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 3)
+        return strdup(output)
+    }
+    #endif
+    return strdup(input)
+}

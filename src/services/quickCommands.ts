@@ -1,4 +1,5 @@
-import { macMedia, macOpen, macSystem } from "../lib/ipc";
+import { macFront, macKey, macMedia, macOpen, macSystem, macType, macClick, voiceScreenshot } from "../lib/ipc";
+import { useSettings } from "../store/settings";
 import { fileRequest, findFile, parsePick, pickFile } from "./filePicker";
 import { solveSpoken } from "./spokenMath";
 
@@ -16,7 +17,14 @@ export type QuickCommand =
   | { kind: "open"; app: string }
   | { kind: "findFile"; query: string }
   | { kind: "pickFile"; index: number }
-  | { kind: "math"; shown: string; spoken: string };
+  | { kind: "math"; shown: string; spoken: string }
+  // Hands-free, said out loud only: they act on the app in front, not on E.V's chat.
+  | { kind: "type"; text: string }
+  | { kind: "key"; key: "return"; shift: boolean }
+  | { kind: "undo" }
+  | { kind: "click"; label: string }
+  | { kind: "screenshot"; into?: string }
+  | { kind: "dictionary"; word: string };
 
 const FILLER = /^(?:(?:ok(?:ay)?|hey|so|um+|uh+|yo)[,\s]+)*(?:(?:can|could|would|will)\s+you\s+|please\s+|just\s+|go\s+(?:ahead\s+and\s+)?)*/i;
 const TAIL = /[\s,]*(?:please|for\s+me|now|right\s+now|thanks?(?:\s+you)?)*[\s.!?]*$/i;
@@ -34,7 +42,30 @@ function percent(text: string): number | undefined {
   return word === undefined ? undefined : NUMBER_WORDS[word];
 }
 
-export function parseQuickCommand(input: string): QuickCommand | null {
+/** Things said to the app in front: "type …", "send it", "click Submit", "screenshot into Slack". */
+function parseHandsFree(input: string): QuickCommand | null {
+  const raw = input.trim().replace(FILLER, "");
+  const typed = /^type\s+(.+)$/is.exec(raw);
+  if (typed) return { kind: "type", text: typed[1].trim() };
+  const text = raw.replace(TAIL, "").trim().toLowerCase();
+  if (/^(?:send(?:\s+it|\s+that)?|press\s+enter|hit\s+enter|submit(?:\s+it)?)$/.test(text)) return { kind: "key", key: "return", shift: false };
+  if (/^new\s+line$/.test(text)) return { kind: "key", key: "return", shift: true };
+  if (/^(?:delete|undo|scratch|erase)\s+(?:that|it)$/.test(text)) return { kind: "undo" };
+  const shot = /^(?:take\s+a\s+)?screen\s?shot(?:\s+(?:this|it|that))?(?:\s+(?:into|to|in)\s+([\w .&+-]{1,30}))?$/.exec(text);
+  if (shot) return { kind: "screenshot", ...(shot[1] ? { into: shot[1].trim().replace(/\b\w/g, (c) => c.toUpperCase()) } : {}) };
+  const word = /^add\s+(.+?)\s+to\s+(?:my\s+)?dictionary$/i.exec(raw.replace(TAIL, "").trim());
+  if (word) return { kind: "dictionary", word: word[1].trim().replace(/^["“]|["”]$/g, "") };
+  const click = /^(?:click|press|tap|hit)\s+(?:on\s+)?(?:the\s+)?(.{1,40}?)(?:\s+button)?$/.exec(text);
+  if (click && !/^(?:play|pause|next|skip|previous|enter|it|that)$/.test(click[1])) return { kind: "click", label: click[1] };
+  return null;
+}
+
+/** `spoken`: said out loud (hands-free commands for the app in front only work spoken). */
+export function parseQuickCommand(input: string, spoken = false): QuickCommand | null {
+  if (spoken) {
+    const handsFree = parseHandsFree(input);
+    if (handsFree) return handsFree;
+  }
   const index = parsePick(input);
   if (index) return { kind: "pickFile", index };
   const file = fileRequest(input);
@@ -113,5 +144,39 @@ export async function runQuickCommand(command: QuickCommand): Promise<string | {
       return pickFile(command.index);
     case "math":
       return { text: command.shown, spoken: command.spoken };
+    case "type": {
+      const { dictationText } = await import("./dictation");
+      const text = await dictationText(command.text);
+      await macType(text, "", true);
+      return `Typed: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
+    }
+    case "key":
+      await macKey(command.key, command.shift ? ["shift"] : [], true, "", true);
+      return command.shift ? "New line." : "Sent.";
+    case "undo":
+      await macKey("z", ["command"], true, "", true);
+      return "Deleted.";
+    case "click": {
+      const front = await macFront();
+      const result = await macClick({ app: front.app, label: command.label, approved: true });
+      if (!result.done) throw new Error(`no "${command.label}" in ${front.app}`);
+      return `Clicked ${command.label}.`;
+    }
+    case "screenshot": {
+      if (!command.into) {
+        const path = await voiceScreenshot(false);
+        return `Screenshot saved: ${path.split("/").pop()}`;
+      }
+      await voiceScreenshot(true);
+      await macOpen(undefined, command.into);
+      await new Promise((r) => setTimeout(r, 450));
+      await macKey("v", ["command"], true, "", true);
+      return `Screenshot pasted into ${command.into}.`;
+    }
+    case "dictionary": {
+      const { settings, save } = useSettings.getState();
+      if (!settings.voice.dictionary.includes(command.word)) await save({ ...settings, voice: { ...settings.voice, dictionary: [...settings.voice.dictionary, command.word] } });
+      return `Added “${command.word}” to your dictionary.`;
+    }
   }
 }

@@ -267,6 +267,14 @@ export interface Settings {
       /** Reminders, approvals, failed tasks: always out loud (plus notch), or notch only. */
       important: "speak" | "notch";
     };
+    /** Your spellings for names and words the speech engine gets wrong ("Vorssaint", "Ducknac"). */
+    dictionary: string[];
+    /**
+     * Dictation into any app: hold `shortcut`, talk, let go — the words are typed where your cursor
+     * is. `polished`: Apple's on-device model also fixes self-corrections. `doubleCommand`: tap ⌘
+     * twice to turn hands-free (Talk mode) on or off.
+     */
+    dictation: { enabled: boolean; shortcut: string; polished: boolean; doubleCommand: boolean };
     /** Seconds E.V keeps listening after an answer without "Hey E.V" (2–15). */
     conversationSeconds: number;
     /** The conversation window became "after every answer, 8 s" (applied once to older settings). */

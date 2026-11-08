@@ -43,3 +43,23 @@ describe("instant commands", () => {
     }
   });
 });
+
+describe("hands-free commands (spoken only)", () => {
+  it("act on the app in front when said out loud", () => {
+    expect(parseQuickCommand("type fix the failing tests", true)).toEqual({ kind: "type", text: "fix the failing tests" });
+    expect(parseQuickCommand("send it", true)).toEqual({ kind: "key", key: "return", shift: false });
+    expect(parseQuickCommand("new line", true)).toEqual({ kind: "key", key: "return", shift: true });
+    expect(parseQuickCommand("delete that", true)).toEqual({ kind: "undo" });
+    expect(parseQuickCommand("click submit", true)).toEqual({ kind: "click", label: "submit" });
+    expect(parseQuickCommand("take a screenshot", true)).toEqual({ kind: "screenshot" });
+    expect(parseQuickCommand("screenshot into slack", true)).toEqual({ kind: "screenshot", into: "Slack" });
+    expect(parseQuickCommand("add Vorssaint to my dictionary", true)).toEqual({ kind: "dictionary", word: "Vorssaint" });
+    // Not a button called "play": that one is for the music (the router takes it).
+    expect(parseQuickCommand("hit play", true)).toBeNull();
+  });
+
+  it("never fire from typing", () => {
+    expect(parseQuickCommand("send it")).toBeNull();
+    expect(parseQuickCommand("type fix the tests")).toBeNull();
+  });
+});

@@ -1,3 +1,4 @@
+import { cleanTranscript } from "./transcriptCleanup";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { pttConfigure } from "../lib/ipc";
@@ -50,7 +51,8 @@ export function startHoldToTalk(): void {
     if (state.settings.voice.holdToTalk !== previous.settings.voice.holdToTalk) apply();
   });
   void listen<string>("ptt-text", (event) => {
-    const text = event.payload.trim();
+    // Parakeet's words, tidied on the Mac before anything sees them (transcriptCleanup.ts).
+    const text = cleanTranscript(event.payload, { dictionary: useSettings.getState().settings.voice.dictionary });
     if (!text) return;
     // With the quick panel open, the words go into its box to check before sending.
     if (dictateIntoPanel(text)) return;

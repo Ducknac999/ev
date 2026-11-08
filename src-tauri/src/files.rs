@@ -376,6 +376,28 @@ pub fn file_open(path: String, reveal: Option<bool>) -> Result<(), String> {
     Ok(())
 }
 
+/// "Take a screenshot" (saved to the Desktop, like ⌘⇧3) or "… into Slack" (`clipboard`: copied,
+/// for pasting). Uses E.V's Screen Recording permission.
+#[tauri::command]
+pub fn voice_screenshot(clipboard: bool) -> Result<String, String> {
+    let mut command = std::process::Command::new("/usr/sbin/screencapture");
+    command.arg("-x");
+    let path = if clipboard {
+        command.arg("-c");
+        String::new()
+    } else {
+        let stamp = std::process::Command::new("/bin/date").arg("+%Y-%m-%d at %H.%M.%S").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        let path = home().join("Desktop").join(format!("Screenshot {stamp}.png")).display().to_string();
+        command.arg(&path);
+        path
+    };
+    let status = command.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Couldn't take the screenshot (Screen Recording permission?)".into());
+    }
+    Ok(path)
+}
+
 /// Which drop-box files are still where they were.
 #[tauri::command]
 pub fn files_exist(paths: Vec<String>) -> Vec<bool> {

@@ -672,3 +672,6 @@ export const lyricsClear = () => invoke<void>("lyrics_clear");
 export type RouteReply = { available: boolean; tool: string; values?: Record<string, unknown>; ms?: number; reason?: string };
 export const routeRequest = (request: { tools: unknown; learned: { text: string; tool: string }[]; text: string }) => invoke<RouteReply>("route_request", { request });
 export const routePrewarm = () => invoke<boolean>("route_prewarm");
+export const polishDictation = (text: string) => invoke<string>("polish_dictation", { text });
+export const dictateConfigure = (shortcut: string | null, doubleCommand: boolean) => invoke<void>("dictate_configure", { shortcut, doubleCommand });
+export const voiceScreenshot = (clipboard: boolean) => invoke<string>("voice_screenshot", { clipboard });

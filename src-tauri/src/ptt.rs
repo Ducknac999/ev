@@ -100,6 +100,14 @@ struct State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State { spec: None, held: false, tap: 0 });
+/// Dictation's own key: held, the words are typed into whatever app is in front (not sent to E.V).
+static DICTATE: Mutex<State> = Mutex::new(State { spec: None, held: false, tap: 0 });
+/// Which key the current recording belongs to.
+static DICTATING: AtomicBool = AtomicBool::new(false);
+/// Double-tap ⌘ turns hands-free (Talk mode) on or off.
+static DOUBLE_COMMAND: AtomicBool = AtomicBool::new(false);
+/// ⌘ pressed alone: when it went down, and when the last lone tap ended.
+static COMMAND_TAP: Mutex<(Option<std::time::Instant>, Option<std::time::Instant>)> = Mutex::new((None, None));
 static APP: OnceLock<AppHandle> = OnceLock::new();
 /// The approval shortcuts work only while an approval is waiting.
 static APPROVAL_KEYS: AtomicBool = AtomicBool::new(false);
@@ -151,14 +159,18 @@ fn emit(what: &str) {
                     crate::notch::send_ev("heard", "Didn't catch that", None);
                     return;
                 }
-                crate::notch::send_ev("heard", &text, None);
+                let dictating = DICTATING.swap(false, Ordering::SeqCst);
+                if !dictating {
+                    crate::notch::send_ev("heard", &text, None);
+                }
                 if let Some(app) = APP.get() {
-                    let _ = app.emit_to("main", "ptt-text", text);
+                    let _ = app.emit_to("main", if dictating { "dictate-text" } else { "ptt-text" }, text);
                 }
             });
         }
         _ => {
             HOLDING.store(false, Ordering::SeqCst);
+            DICTATING.store(false, Ordering::SeqCst);
             mic::cancel();
             std::thread::spawn(|| crate::notch::send_ev("clear", "", None));
         }
@@ -295,39 +307,84 @@ extern "C" fn on_event(_proxy: *mut c_void, kind: u32, event: CGEventRef, _info:
         }
         return std::ptr::null_mut();
     }
-    let Ok(mut state) = STATE.lock() else { return event };
-    let Some(spec) = state.spec else { return event };
+    // ⌘ tapped twice on its own (no other key): hands-free on or off.
+    if DOUBLE_COMMAND.load(Ordering::Relaxed) {
+        let mut tap = COMMAND_TAP.lock().unwrap();
+        if kind == FLAGS_CHANGED && (code == 55 || code == 54) {
+            let alone = flags & MODIFIERS == COMMAND;
+            if alone {
+                tap.0 = Some(std::time::Instant::now());
+            } else if flags & MODIFIERS == 0 {
+                if let Some(down) = tap.0.take() {
+                    let now = std::time::Instant::now();
+                    if now.duration_since(down).as_millis() < 300 {
+                        if tap.1.is_some_and(|last| now.duration_since(last).as_millis() < 450) {
+                            tap.1 = None;
+                            if let Some(app) = APP.get() {
+                                let _ = app.emit_to("main", "handsfree-toggle", ());
+                            }
+                        } else {
+                            tap.1 = Some(now);
+                        }
+                    }
+                }
+            }
+        } else if kind == KEY_DOWN || kind == FLAGS_CHANGED {
+            // ⌘ used with another key (⌘C…): not a tap.
+            *tap = (None, None);
+        }
+    }
+    if let Some(out) = key(&DICTATE, true, kind, code, flags, event) {
+        return out;
+    }
+    key(&STATE, false, kind, code, flags, event).unwrap_or(event)
+}
+
+/// The key down: recording starts, for E.V or for typing into the front app.
+fn start(dictate: bool) {
+    DICTATING.store(dictate, Ordering::SeqCst);
+    emit("down");
+}
+
+/// One hold key's logic. Some(event or null) when it handled the event, None to keep looking.
+fn key(slot: &Mutex<State>, dictate: bool, kind: u32, code: i64, flags: u64, event: CGEventRef) -> Option<CGEventRef> {
+    // While the other key is recording, this one stays out of the way.
+    if DICTATING.load(Ordering::SeqCst) != dictate && HOLDING.load(Ordering::SeqCst) {
+        return None;
+    }
+    let Ok(mut state) = slot.lock() else { return None };
+    let Some(spec) = state.spec else { return None };
     match spec {
         Spec::Combo { code: want, flags: want_flags } => {
             if kind == KEY_DOWN && code == ESCAPE && state.held {
                 state.held = false;
                 drop(state);
                 emit("cancel");
-                return std::ptr::null_mut();
+                return Some(std::ptr::null_mut());
             }
             if code != want || !matches!(kind, KEY_DOWN | KEY_UP) {
-                return event;
+                return None;
             }
             if kind == KEY_DOWN {
                 if state.held {
-                    return std::ptr::null_mut(); // key repeat while held
+                    return Some(std::ptr::null_mut()); // key repeat while held
                 }
                 let repeat = unsafe { CGEventGetIntegerValueField(event, FIELD_AUTOREPEAT) } != 0;
                 if flags & MODIFIERS != want_flags || repeat {
-                    return event;
+                    return None;
                 }
                 state.held = true;
                 drop(state);
-                emit("down");
-                return std::ptr::null_mut();
+                start(dictate);
+                return Some(std::ptr::null_mut());
             }
             if state.held {
                 state.held = false;
                 drop(state);
                 emit("up");
-                return std::ptr::null_mut();
+                return Some(std::ptr::null_mut());
             }
-            event
+            None
         }
         Spec::Alone { code: want, flag } => {
             if kind == FLAGS_CHANGED && code == want {
@@ -335,13 +392,13 @@ extern "C" fn on_event(_proxy: *mut c_void, kind: u32, event: CGEventRef, _info:
                 if down && !state.held {
                     state.held = true;
                     drop(state);
-                    emit("down");
+                    start(dictate);
                 } else if !down && state.held {
                     state.held = false;
                     drop(state);
                     emit("up");
                 }
-                return event;
+                return Some(event);
             }
             // Another key while it's held: it was used as a modifier (fn+Delete, ⌥+letter), not to talk.
             if kind == KEY_DOWN && state.held {
@@ -349,7 +406,7 @@ extern "C" fn on_event(_proxy: *mut c_void, kind: u32, event: CGEventRef, _info:
                 drop(state);
                 emit("cancel");
             }
-            event
+            None
         }
     }
 }
@@ -453,6 +510,24 @@ pub(crate) fn order(app: &AppHandle, label: &str, show: bool) {
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
+
+/// Dictation's hold key (types into the front app), or none; and double-tap ⌘ for hands-free.
+#[tauri::command]
+pub fn dictate_configure(app: AppHandle, shortcut: Option<String>, double_command: bool) -> Result<(), String> {
+    let _ = APP.set(app.clone());
+    DOUBLE_COMMAND.store(double_command, Ordering::Relaxed);
+    let spec = match shortcut.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => Some(parse(s)?),
+        None => None,
+    };
+    if spec.is_some() || double_command {
+        ensure_tap(&app)?;
+    }
+    let mut state = DICTATE.lock().unwrap();
+    state.spec = spec;
+    state.held = false;
+    Ok(())
+}
 
 /// Turns hold to talk on with this shortcut, or off.
 #[tauri::command]
