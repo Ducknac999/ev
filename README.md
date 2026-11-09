@@ -43,6 +43,7 @@ You choose which AI powers it: a cloud model with your own API key, your Claude 
 - **Dictation into any app:** hold Right Option, talk, and let go. Your words are pasted where your cursor is.
 - **Speech-to-text on your Mac:** your speech is turned into text on your Mac and cleaned up there (no "um", no stutters, your own spellings for names).
 - **Spoken replies:** E.V answers out loud in a natural voice, pausing your music while it speaks.
+- **Steady voice:** with headphones, E.V keeps the same volume for its whole answer. Only "Hey E.V" cuts it off, so you can ask something new.
 
 **⚡ Instant actions, no AI needed**
 - Volume, play/pause/skip, dark mode, opening apps, finding files, math and the time happen instantly.
@@ -60,9 +61,16 @@ E.V lives in your Mac's notch. Hover over it or use a shortcut to open it:
 - **Live moments:** what E.V heard and answered, and approval requests you can click.
 - **☕ Caffeine:** keeps your Mac awake, even with the lid closed.
 - **Full screen:** the notch steps aside in full-screen apps.
+- **Always there:** close E.V's window (⌘W) or quit it (⌘Q), and the notch keeps working: clipboard, dictation, music and ☕. Quit completely with ⏻ in the notch.
+- **Open at login:** the notch and your clipboard are ready as soon as your Mac starts.
 
 **⌨️ Quick panel**
 - A small E.V chat over any app with one shortcut (⌥Space).
+
+**⚙️ Settings that are easy to find**
+- Settings are grouped into clear sections, with every shortcut on one page.
+- Search (⌘F) finds any setting, even with typos or other words: "keep awake" finds Caffeine.
+- Setup lets you turn the notch, and each of its sections, on or off.
 
 ## You stay in control
 
@@ -105,7 +113,7 @@ You only do this once. Updates never ask again.
 
 ## Updates
 
-**Settings → General → Check for updates** shows what's new and installs it in one click. Your settings, keys and chats stay.
+**Settings → Updates** shows what's new and installs it in one click. Your settings, keys and chats stay.
 
 ## License
 
