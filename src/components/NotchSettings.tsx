@@ -35,7 +35,7 @@ export function NotchSettings({ draft, update }: { draft: Settings; update: (fn:
           </label>
           <label className="check-row">
             <input type="checkbox" checked={notch.hideInFullscreen} onChange={(e) => update((d) => void (d.notch.hideInFullscreen = e.target.checked))} />
-            <span>Hide the notch while an app is full screen, so it never covers the app's top bar (approvals, answers and ⌘⇧C still show it)</span>
+            <span>Hide the notch while an app is full screen, so it never covers the app's top bar. Push the pointer to the top edge to slide it out; approvals, answers and ⌘⇧C still show it</span>
           </label>
           <label className="field">
             <span>Lyrics</span>

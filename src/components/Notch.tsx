@@ -381,6 +381,7 @@ export function Notch() {
   const mode: "idle" | "wings" | "bubble" | "open" = open ? "open" : banner ? "bubble" : wings ? "wings" : "idle";
   // A full-screen app owns the top of the screen: the notch shows only for something to answer
   // (an approval, what E.V said) or when you open it with a shortcut.
+  // Hidden, pushing the pointer against the top edge over the notch slides it out (notch_window.rs).
   const hidden = fullscreen && state?.hideInFullscreen !== false && (mode === "idle" || mode === "wings");
 
   const contentRef = useRef<HTMLDivElement>(null);

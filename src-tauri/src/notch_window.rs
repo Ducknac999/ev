@@ -28,6 +28,12 @@ static TAKES_MOUSE: AtomicBool = AtomicBool::new(true);
 static RETURN_TO: Mutex<Option<i32>> = Mutex::new(None);
 /// The app in front is full screen on the notch's screen (the notch hides then, like the menu bar).
 static FULLSCREEN: AtomicBool = AtomicBool::new(false);
+/// Hidden for a full-screen app: the strip at the very top edge (over the notch's spot) that
+/// slides it out, like the menu bar in full screen. Top-left screen points.
+static EDGE: Mutex<(f64, f64, f64, f64)> = Mutex::new((0.0, 0.0, 0.0, 0.0));
+/// How long the pointer rests at the top edge before the notch slides out (not on a passing flick).
+const EDGE_DWELL_MS: u128 = 250;
+const EDGE_DEPTH: f64 = 3.0;
 
 /// Asks the helper library whether the front app fills the notch's screen.
 fn front_fullscreen() -> bool {
@@ -297,9 +303,11 @@ pub fn notch_enable(app: AppHandle, on: bool) -> Result<(), String> {
 /// for which clicks the notch takes. The window itself doesn't change.
 #[tauri::command]
 pub fn notch_resize(width: f64, height: f64) {
-    let (frame, _, _, _, primary_h) = screen();
-    // 0 × 0: the notch is hidden (a full-screen app) and takes no hover or clicks.
+    let (frame, nw, _, _, primary_h) = screen();
+    // 0 × 0: hidden for a full-screen app. Nothing takes clicks; pushing the pointer against the
+    // top edge over the notch's spot slides it out.
     let (w, h) = if width <= 0.0 || height <= 0.0 { (0.0, 0.0) } else { (width.clamp(60.0, ENVELOPE_W), height.clamp(20.0, ENVELOPE_H)) };
+    *EDGE.lock().unwrap() = (frame.origin.x + (frame.size.w - nw) / 2.0, primary_h - (frame.origin.y + frame.size.h), nw, EDGE_DEPTH);
     *SHAPE.lock().unwrap() = (frame.origin.x + (frame.size.w - w) / 2.0, primary_h - (frame.origin.y + frame.size.h), w, h);
 }
 
@@ -388,6 +396,7 @@ pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let mut inside = false;
         let mut ticks = 0u32;
+        let mut at_edge: Option<std::time::Instant> = None;
         loop {
             std::thread::sleep(std::time::Duration::from_millis(if active() { 100 } else { 600 }));
             if !active() {
@@ -410,7 +419,18 @@ pub fn start(app: AppHandle) {
             let Some(point) = pointer() else { continue };
             let (x, y, w, h) = *SHAPE.lock().unwrap();
             // A few points of slack below, so moving down into the card doesn't flicker it.
-            let now = w > 0.0 && point.0 >= x && point.0 <= x + w && point.1 >= y - 2.0 && point.1 <= y + h + 6.0;
+            let now = if w > 0.0 {
+                at_edge = None;
+                point.0 >= x && point.0 <= x + w && point.1 >= y - 2.0 && point.1 <= y + h + 6.0
+            } else {
+                let (ex, ey, ew, eh) = *EDGE.lock().unwrap();
+                if ew > 0.0 && point.0 >= ex && point.0 <= ex + ew && point.1 >= ey - 1.0 && point.1 <= ey + eh {
+                    at_edge.get_or_insert_with(std::time::Instant::now).elapsed().as_millis() >= EDGE_DWELL_MS
+                } else {
+                    at_edge = None;
+                    false
+                }
+            };
             if now != TAKES_MOUSE.load(Ordering::Relaxed) {
                 TAKES_MOUSE.store(now, Ordering::Relaxed);
                 let handle = app.clone();
