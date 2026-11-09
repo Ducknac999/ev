@@ -299,11 +299,16 @@ class AudioEngine {
     };
   }
 
-  /** Drops E.V's voice to a whisper (or back to normal) within a few milliseconds. */
+  /** Turns E.V's voice down gently (you're talking over it on speakers) or back up, with a short fade. */
   duck(on: boolean): void {
     void invoke("native_duck", { on }).catch(() => {});
     if (!this.ctx || !this.voiceGain) return;
-    this.voiceGain.gain.setTargetAtTime(on ? 0.1 : 1, this.ctx.currentTime, 0.02);
+    this.voiceGain.gain.setTargetAtTime(on ? 0.35 : 1, this.ctx.currentTime, 0.05);
+  }
+
+  /** Whether E.V's voice is going to speakers (true) or headphones (false). */
+  async outputIsSpeakers(): Promise<boolean> {
+    return invoke<boolean>("native_output_speakers").catch(() => true);
   }
 
   stopPlayback(): void {

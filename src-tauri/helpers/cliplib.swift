@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 import CryptoKit
 import Foundation
 import ImageIO
@@ -216,6 +217,38 @@ public func evFrontFullscreen(_ x: Double, _ y: Double, _ width: Double, _ heigh
         if abs(bounds.minX - screen.minX) < 1, abs(bounds.minY - screen.minY) < 1, abs(bounds.width - screen.width) < 1, abs(bounds.height - screen.height) < 1 {
             return true
         }
+    }
+    return false
+}
+
+/// Whether E.V's voice is going to speakers (the Mac's own, a display, AirPlay, a speaker) rather
+/// than headphones: only over speakers does the mic hear E.V, so only then does it turn itself
+/// down while you talk over it.
+@_cdecl("ev_output_speakers")
+public func evOutputSpeakers() -> Bool {
+    var device = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return true }
+    var transport: UInt32 = 0
+    size = UInt32(MemoryLayout<UInt32>.size)
+    address.mSelector = kAudioDevicePropertyTransportType
+    _ = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport)
+    if transport == kAudioDeviceTransportTypeBuiltIn {
+        // The Mac's own output: headphones in the jack ('hdpn') or its speakers ('ispk').
+        var source: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        var sourceAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDataSource, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectGetPropertyData(device, &sourceAddress, 0, nil, &size, &source) == noErr { return source != 0x6864_706E }
+        return true
+    }
+    if [kAudioDeviceTransportTypeHDMI, kAudioDeviceTransportTypeDisplayPort, kAudioDeviceTransportTypeAirPlay].contains(transport) { return true }
+    var name: Unmanaged<CFString>?
+    size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    address.mSelector = kAudioObjectPropertyName
+    if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name) == noErr, let n = name?.takeRetainedValue() as String? {
+        let lower = n.lowercased()
+        if ["speaker", "display", "tv", "homepod", "soundbar", "monitor"].contains(where: { lower.contains($0) }) { return true }
     }
     return false
 }

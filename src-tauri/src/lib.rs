@@ -278,6 +278,7 @@ pub fn run() {
             native_audio::native_play,
             native_audio::native_stop,
             native_audio::native_duck,
+            native_audio::native_output_speakers,
             native_audio::paste_text,
             clipboard::clip_configure,
             clipboard::clip_history,

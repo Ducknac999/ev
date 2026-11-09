@@ -20,8 +20,13 @@ const FRAME: usize = 1024;
 /// Levels for the orb and for "is the user louder than E.V's own voice" (f32 bits).
 static MIC_LEVEL: AtomicU32 = AtomicU32::new(0);
 static OUT_LEVEL: AtomicU32 = AtomicU32::new(0);
-/// 1.0 normally, 0.1 while ducked (f32 bits).
+/// Where E.V's voice volume is heading: 1.0 normally, lower while you talk over it on speakers
+/// (f32 bits). The speaker fades to it over ~120 ms, never jumps.
 static GAIN: AtomicU32 = AtomicU32::new(0x3f80_0000);
+const FADE_SECONDS: f32 = 0.12;
+/// Every sentence is played at this loudness (RMS of its spoken parts), so none is louder or
+/// quieter than the one before.
+const VOICE_RMS: f32 = 0.09;
 /// Bumped by every play and stop: a playback whose number is old stops at once.
 static PLAY_GENERATION: AtomicU64 = AtomicU64::new(0);
 static MIC_ON: AtomicBool = AtomicBool::new(false);
@@ -173,7 +178,8 @@ pub fn native_levels() -> [f32; 2] {
 #[tauri::command]
 pub async fn native_play(request: Request<'_>) -> Result<(), String> {
     let InvokeBody::Raw(bytes) = request.body() else { return Err("expected WAV bytes".into()) };
-    let (samples, rate) = crate::voice_engine::decode_wav(bytes)?;
+    let (mut samples, rate) = crate::voice_engine::decode_wav(bytes)?;
+    even_loudness(&mut samples, rate as u32);
     let generation = PLAY_GENERATION.load(Ordering::SeqCst);
     tokio::task::spawn_blocking(move || play_blocking(samples, rate as u32, generation)).await.map_err(|e| e.to_string())?
 }
@@ -273,8 +279,10 @@ fn open_speaker(device: cpal::Device, name: String) -> Option<(cpal::Stream, Spe
     let channels = config.channels() as usize;
     let queue: Arc<Mutex<std::collections::VecDeque<Clip>>> = Arc::new(Mutex::new(std::collections::VecDeque::new()));
     let q = queue.clone();
-    let write = move |out: &mut [f32]| {
-        let gain = load(&GAIN);
+    let mut gain = load(&GAIN);
+    let step = 1.0 / (FADE_SECONDS * rate.max(1) as f32);
+    let mut write = move |out: &mut [f32]| {
+        let target = load(&GAIN);
         let current = PLAY_GENERATION.load(Ordering::SeqCst);
         let mut queue = q.lock().unwrap();
         let mut heard = Vec::with_capacity(out.len() / channels.max(1));
@@ -288,15 +296,18 @@ fn open_speaker(device: cpal::Device, name: String) -> Option<(cpal::Stream, Spe
                     break;
                 }
             }
-            let s = match queue.front_mut() {
+            gain += (target - gain).clamp(-step, step);
+            let raw = match queue.front_mut() {
                 Some(clip) => {
-                    let v = clip.samples[clip.pos] * gain;
+                    let v = clip.samples[clip.pos];
                     clip.pos += 1;
                     v
                 }
                 None => 0.0,
             };
-            heard.push(s);
+            // The level is E.V's voice before any turning down, so "louder than E.V" never gets easier.
+            heard.push(raw);
+            let s = raw * gain;
             for c in frame.iter_mut() {
                 *c = s;
             }
@@ -345,10 +356,56 @@ pub fn native_stop() {
     store(&OUT_LEVEL, 0.0);
 }
 
-/// Turns E.V's voice down to a whisper (you're talking over it) or back up.
+/// Turns E.V's voice down (you're talking over it on speakers; `level`, default 0.35) or back up.
+/// The speaker fades either way.
 #[tauri::command]
-pub fn native_duck(on: bool) {
-    store(&GAIN, if on { 0.1 } else { 1.0 });
+pub fn native_duck(on: bool, level: Option<f32>) {
+    store(&GAIN, if on { level.unwrap_or(0.35).clamp(0.05, 1.0) } else { 1.0 });
+}
+
+/// Brings a sentence to E.V's speaking loudness: measured on its spoken parts (pauses don't count),
+/// within 0.5×–2.5×, and never past 0.97 at its loudest point.
+fn even_loudness(samples: &mut [f32], rate: u32) {
+    let window = (rate as usize / 50).max(1);
+    let (mut sum, mut count) = (0.0f64, 0usize);
+    for chunk in samples.chunks(window) {
+        let rms = (chunk.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>() / chunk.len() as f64).sqrt();
+        if rms > 0.01 {
+            sum += rms * rms * chunk.len() as f64;
+            count += chunk.len();
+        }
+    }
+    if count == 0 {
+        return;
+    }
+    let rms = (sum / count as f64).sqrt() as f32;
+    let peak = samples.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    let mut gain = (VOICE_RMS / rms).clamp(0.5, 2.5);
+    if peak * gain > 0.97 {
+        gain = 0.97 / peak;
+    }
+    for x in samples.iter_mut() {
+        *x *= gain;
+    }
+}
+
+/// Whether E.V's voice is going to speakers rather than headphones (helpers/cliplib.swift).
+#[tauri::command]
+pub fn native_output_speakers() -> bool {
+    static F: OnceLock<usize> = OnceLock::new();
+    let f = *F.get_or_init(|| {
+        let Some(path) = crate::doc::lib_path() else { return 0 };
+        let Ok(c_path) = std::ffi::CString::new(path.display().to_string()) else { return 0 };
+        let handle = unsafe { libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+        if handle.is_null() {
+            return 0;
+        }
+        unsafe { libc::dlsym(handle, c"ev_output_speakers".as_ptr()) as usize }
+    });
+    if f == 0 {
+        return true;
+    }
+    unsafe { std::mem::transmute::<usize, extern "C" fn() -> bool>(f)() }
 }
 
 /// Dictation (and "type …"): pasted into the app in front like Handy, clipboard restored after.
@@ -378,6 +435,30 @@ pub async fn paste_text(text: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sentences_come_out_equally_loud() {
+        let rms = |s: &[f32]| (s.iter().map(|x| x * x).sum::<f32>() / s.len() as f32).sqrt();
+        let tone = |amp: f32| (0..16_000).map(|i| amp * (i as f32 * 0.05).sin()).collect::<Vec<f32>>();
+        let (mut quiet, mut loud) = (tone(0.05), tone(0.2));
+        super::even_loudness(&mut quiet, 16_000);
+        super::even_loudness(&mut loud, 16_000);
+        assert!((rms(&quiet) - rms(&loud)).abs() < 0.005, "{} vs {}", rms(&quiet), rms(&loud));
+        // Never clips.
+        let mut peaky = tone(0.9);
+        super::even_loudness(&mut peaky, 16_000);
+        assert!(peaky.iter().all(|x| x.abs() <= 0.971));
+        // Silence stays silence.
+        let mut silent = vec![0.0; 1000];
+        super::even_loudness(&mut silent, 16_000);
+        assert!(silent.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    #[ignore]
+    fn reports_the_output_on_this_mac() {
+        println!("E.V's voice goes to speakers: {}", super::native_output_speakers());
+    }
+
     #[test]
     #[ignore]
     fn plays_on_this_mac() {

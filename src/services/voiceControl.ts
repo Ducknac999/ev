@@ -1,6 +1,6 @@
 import { cleanTranscript } from "./transcriptCleanup";
 import { hushToNotch, notchBusyFor, sayLastIfAsked } from "./announce";
-import { audioEngine } from "../audio/engine";
+import { audioEngine, voiceLog } from "../audio/engine";
 import { speechQueue } from "../audio/speech";
 import { concat, encodeWav, resample } from "../audio/wav";
 import { notchMessage, sttTranscribe, vadReset, voiceEngineWarm, voiceFrame } from "../lib/ipc";
@@ -86,6 +86,11 @@ class TalkLoop {
   private checking = false;
   private ducked = false;
   private lastLoud = 0;
+  /** How long a voice has been clearly over E.V's (on speakers), before turning E.V down. */
+  private loudMs = 0;
+  /** E.V's voice is going to speakers: only then can the mic hear it, and only then does it turn down. */
+  private onSpeakers = false;
+  private outputChecked = false;
 
   get active(): boolean {
     return this.unsubscribe !== null;
@@ -229,14 +234,22 @@ class TalkLoop {
     this.ring = [];
     this.ringMs = 0;
     this.sinceCheck = 0;
+    this.loudMs = 0;
+    this.outputChecked = false;
     if (this.ducked) {
       this.ducked = false;
       audioEngine.duck(false);
+      voiceLog({ event: "voice-up", why: "E.V finished speaking" });
     }
   }
 
   /** E.V is talking: listen for "Hey E.V" over it. */
   private listenOver(frame: Float32Array, rate: number, frameMs: number, rms: number, threshold: number, speech: boolean): void {
+    if (!this.outputChecked) {
+      // Once per answer: headphones or speakers (the output can change between answers).
+      this.outputChecked = true;
+      void audioEngine.outputIsSpeakers().then((speakers) => (this.onSpeakers = speakers));
+    }
     this.ring.push(frame);
     this.ringMs += frameMs;
     while (this.ringMs > BARGE_WINDOW_MS && this.ring.length > 1) this.ringMs -= (this.ring.shift()!.length / rate) * 1000;
@@ -248,16 +261,26 @@ class TalkLoop {
       this.quietMs += frameMs;
       if (this.quietMs >= 200) this.sinceCheck = BARGE_CHECK_MS;
     }
-    // Clearly louder than E.V's own voice: probably the user. Turn E.V down at once.
-    if (rms > threshold) {
+    // E.V keeps talking at full volume whatever it hears; only "Hey E.V" stops it (interruptCheck).
+    // On speakers its own voice reaches the mic, so a voice clearly over it for a quarter second
+    // turns it down a little (a short fade) to hear you better. With headphones it never does.
+    const echo = audioEngine.outputLevel() * 0.25;
+    const loud = this.onSpeakers && speech && rms > Math.max(threshold, echo);
+    if (loud) {
+      this.loudMs += frameMs;
       this.lastLoud = Date.now();
-      if (!this.ducked) {
+      if (!this.ducked && this.loudMs >= 250) {
         this.ducked = true;
         audioEngine.duck(true);
+        voiceLog({ event: "voice-down", why: "a voice over E.V on speakers", mic: Number(rms.toFixed(4)), bar: Number(Math.max(threshold, echo).toFixed(4)) });
       }
-    } else if (this.ducked && !this.checking && Date.now() - this.lastLoud > 900) {
-      this.ducked = false;
-      audioEngine.duck(false);
+    } else {
+      this.loudMs = 0;
+      if (this.ducked && !this.checking && Date.now() - this.lastLoud > 900) {
+        this.ducked = false;
+        audioEngine.duck(false);
+        voiceLog({ event: "voice-up", why: "quiet again" });
+      }
     }
     if (this.sinceCheck >= BARGE_CHECK_MS && !this.checking) {
       this.sinceCheck = 0;
@@ -278,6 +301,7 @@ class TalkLoop {
     }
     const wake = findWake(text);
     if (!wake || !useVoice.getState().speaking) return;
+    voiceLog({ event: "interrupted", why: "heard Hey E.V while speaking", heard: text.slice(0, 80) });
     const ring = this.ring;
     this.clearRing();
     if (!wake.rest || isStopCommand(wake.rest) || isEndPhrase(wake.rest)) {
