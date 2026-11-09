@@ -517,6 +517,13 @@ function NotchStep() {
             </span>
             <input type="checkbox" checked={settings.notch.hideInFullscreen} onChange={(e) => update((d) => void (d.notch.hideInFullscreen = e.target.checked))} />
           </label>
+          <label className="check-row switch-row ob-notch-full">
+            <span className="switch-text">
+              <strong>Open E.V at login</strong>
+              <small>The notch, clipboard and dictation are there as soon as your Mac starts. ⌘Q keeps the notch; quit completely with ⏻ in the notch.</small>
+            </span>
+            <input type="checkbox" checked={settings.background.openAtLogin} onChange={(e) => update((d) => void (d.background.openAtLogin = e.target.checked))} />
+          </label>
         </>
       )}
       <SkipNote />

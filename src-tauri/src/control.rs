@@ -297,11 +297,7 @@ async fn handle(app: &AppHandle, viewer: &Arc<Mutex<Viewer>>, tx: &mpsc::Unbound
             session.signal_foreground(sig);
         }
         "focus" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            crate::app_mode::show_main(app);
             let _ = app.emit("control-focus", json!({ "id": id }));
         }
         _ => reject(op),

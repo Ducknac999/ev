@@ -3,6 +3,7 @@ import CoreAudio
 import CryptoKit
 import Foundation
 import ImageIO
+import ServiceManagement
 
 // Clipboard history for the notch. E.V checks the clipboard's change count twice a second; when
 // it changes, the whole clipboard (every type: plain and rich text, images, files) is saved to a
@@ -251,4 +252,18 @@ public func evOutputSpeakers() -> Bool {
         if ["speaker", "display", "tv", "homepod", "soundbar", "monitor"].contains(where: { lower.contains($0) }) { return true }
     }
     return false
+}
+
+/// "Open E.V at login" through macOS's Login Items. -1 asks; 1 turns it on, 0 off. Returns 1 on,
+/// 0 off, -1 when macOS refused.
+@_cdecl("ev_login_item")
+public func evLoginItem(_ enable: Int32) -> Int32 {
+    let service = SMAppService.mainApp
+    do {
+        if enable == 1, service.status != .enabled { try service.register() }
+        if enable == 0, service.status == .enabled { try service.unregister() }
+    } catch {
+        return -1
+    }
+    return service.status == .enabled ? 1 : 0
 }

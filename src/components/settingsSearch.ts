@@ -73,7 +73,7 @@ export const GROUPS: { label: string; pages: PageInfo[] }[] = [
   {
     label: "App",
     pages: [
-      { id: "general", label: "General", icon: "settings", blurb: "The look, the terminal and setup." },
+      { id: "general", label: "General", icon: "settings", blurb: "The look, closing and quitting, the terminal and setup." },
       { id: "updates", label: "Updates", icon: "download", blurb: "Check for a new version and install it." },
     ],
   },
@@ -139,6 +139,8 @@ export const ENTRIES: SettingEntry[] = [
   { title: "Schedule", page: "schedule", anchor: "schedule", words: "schedule reminders recurring repeat later timer alarm every day" },
   { title: "Activity", page: "activity", anchor: "activity", words: "activity log history what did audit record" },
   { title: "Top bar", page: "general", anchor: "look", words: "top bar toolbar compact hide appearance look layout" },
+  { title: "When I press ⌘Q (keep the notch)", page: "general", anchor: "quitting", words: "quit close command q exit background keep running notch only dock tab hide" },
+  { title: "Open E.V at login", page: "general", anchor: "quitting", words: "login startup start automatically boot launch restart" },
   { title: "Terminal", page: "general", anchor: "terminal", words: "terminal shell font tmux zsh" },
   { title: "Run setup again", page: "general", anchor: "setup", words: "setup onboarding start wizard welcome first time" },
   { title: "Updates", page: "updates", anchor: "updates", words: "update version upgrade release new latest download" },

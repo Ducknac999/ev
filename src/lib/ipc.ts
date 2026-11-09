@@ -707,3 +707,8 @@ export const clipPin = (id: string, pinned: boolean) => invoke<void>("clip_pin",
 export const clipDelete = (id: string) => invoke<void>("clip_delete", { id });
 export const clipIcons = () => invoke<Record<string, string>>("clip_icons");
 export const clipClear = (pinnedToo: boolean) => invoke<void>("clip_clear", { pinnedToo });
+
+export const appQuitMode = (keepNotch: boolean) => invoke<void>("app_quit_mode", { keepNotch });
+export const appQuitAll = () => invoke<void>("app_quit_all");
+/** null asks; true / false turns "Open E.V at login" on or off. Returns whether it's on. */
+export const appLoginItem = (enable: boolean | null) => invoke<boolean>("app_login_item", { enable });

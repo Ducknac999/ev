@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
     features: { chat: true, music: true, shelf: true, dictation: true, caffeine: true },
     clipboard: { enabled: true, shortcut: "shift+command+c", limit: 100, ignoreApps: ["1Password", "Bitwarden", "Keychain Access", "Passwords", "Dashlane", "LastPass"] },
   },
+  background: { keepNotchOnQuit: true, openAtLogin: false },
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
@@ -153,6 +154,8 @@ function normalize(raw: unknown): Settings {
     features: normalizeFeatures(notch.features),
     clipboard: normalizeClipboard(notch.clipboard),
   };
+  const background = (input.background ?? {}) as Partial<Settings["background"]>;
+  settings.background = { keepNotchOnQuit: background.keepNotchOnQuit !== false, openAtLogin: background.openAtLogin === true };
   const limit = Number(input.spending?.dailyLimit);
   settings.spending = { dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 0 };
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };

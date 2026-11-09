@@ -565,6 +565,29 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </label>
                 </div>
               </Anchor>
+              <Anchor id="quitting">
+                <div className="settings-card">
+                  <h4>Closing and quitting</h4>
+                  <p className="settings-intro">
+                    ⌘W or the close button hides E.V's window — it leaves the Dock and ⌘Tab, and everything keeps running. Click E.V in the Dock (or the
+                    notch's Open E.V) to bring it back. Quit completely with ⏻ in the notch or the E.V icon in the menu bar.
+                  </p>
+                  <label className="field">
+                    <span>When I press ⌘Q</span>
+                    <select
+                      value={draft.background.keepNotchOnQuit ? "notch" : "quit"}
+                      onChange={(e) => update((d) => void (d.background.keepNotchOnQuit = e.target.value === "notch"))}
+                    >
+                      <option value="notch">Close the app, keep the notch — clipboard, dictation, music and ☕ keep working</option>
+                      <option value="quit">Quit completely, notch too</option>
+                    </select>
+                  </label>
+                  <label className="check-row">
+                    <input type="checkbox" checked={draft.background.openAtLogin} onChange={(e) => update((d) => void (d.background.openAtLogin = e.target.checked))} />
+                    <span>Open E.V when I log in, so the notch and clipboard are always there</span>
+                  </label>
+                </div>
+              </Anchor>
               <Anchor id="terminal">
                 <TerminalSettings draft={draft} update={update} />
               </Anchor>

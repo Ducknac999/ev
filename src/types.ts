@@ -345,6 +345,8 @@ export interface Settings {
       ignoreApps: string[];
     };
   };
+  /** Quitting: ⌘Q keeps the notch (clipboard, dictation, music, ☕) running; E.V opens at login. */
+  background: { keepNotchOnQuit: boolean; openAtLogin: boolean };
   /** DeepSeek spending: a daily limit in the account's currency (0 = no limit). */
   spending: { dailyLimit: number };
   /** A screen question needs a picture but the chat's model can't see pictures: ask, use Flash · Vision for that look, or read the screen as text. */

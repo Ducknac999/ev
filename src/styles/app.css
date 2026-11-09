@@ -1987,3 +1987,6 @@ button.notch-file.all { border: 0; font: inherit; cursor: pointer; padding: 7px;
 .ob-notch-main { border: 1px solid var(--line-soft); border-radius: 12px; }
 .ob-notch-full { border: 1px solid var(--line-soft); border-radius: 12px; margin-top: 8px; }
 .ob-window .switch-list { margin-top: 8px; }
+
+.notch-tab.quit:hover { color: #ff8a80; background: rgba(255, 90, 80, 0.12); }
+.notch-tab.quit.ask { color: #fff; background: rgba(255, 70, 60, 0.75); }

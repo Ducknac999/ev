@@ -1,3 +1,4 @@
+import { startAppMode } from "./services/appMode";
 import { startNotch } from "./services/notchBridge";
 import { prewarmRouter } from "./services/router";
 import { startDictation } from "./services/dictation";
@@ -234,6 +235,7 @@ export default function App() {
     startApprovalPopup();
     startQuickPanel();
     startNotch();
+    startAppMode();
     prewarmRouter();
     startDictation();
     void refreshBalance(true);

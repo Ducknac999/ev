@@ -20,6 +20,7 @@ mod notch;
 mod notch_window;
 mod caffeine;
 mod clipboard;
+mod app_mode;
 mod files;
 mod lyrics;
 mod router;
@@ -145,6 +146,13 @@ pub fn run() {
                 })
                 .build(),
         )
+        .menu(|app| app_mode::menu(app))
+        .on_menu_event(|app, event| app_mode::on_menu_event(app, event.id().as_ref()))
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                app_mode::on_close_requested(window, api);
+            }
+        })
         .setup(|app| {
             if let Some((target, out)) = background_check_request() {
                 std::thread::spawn(move || {
@@ -281,6 +289,9 @@ pub fn run() {
             native_audio::native_output_speakers,
             native_audio::paste_text,
             clipboard::clip_configure,
+            app_mode::app_quit_mode,
+            app_mode::app_quit_all,
+            app_mode::app_login_item,
             clipboard::clip_history,
             clipboard::clip_pick,
             clipboard::clip_pin,
@@ -356,10 +367,7 @@ pub fn run() {
             // The Dock icon brings E.V's window back (also when chat panels are off).
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
-                if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
-                    let _ = main.show();
-                    let _ = main.set_focus();
-                }
+                app_mode::show_main(app);
             }
             if let tauri::RunEvent::Exit = event {
                 ptys_on_exit.kill_all();

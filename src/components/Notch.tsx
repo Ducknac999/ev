@@ -6,6 +6,7 @@ import {
   caffeineStatus,
   filesExist,
   lyricsFor,
+  appQuitAll,
   macClipboard,
   macMedia,
   notchAnswer,
@@ -56,7 +57,7 @@ const TABS: { id: Tab; icon: IconName; label: string }[] = [
 ];
 /** Open, the notch is wide enough for the icons beside the camera. */
 const OPEN_W = 520;
-const SIDE_W = 168;
+const SIDE_W = 176;
 const WING = 46;
 
 function request(r: NotchRequest): void {
@@ -144,6 +145,13 @@ export function Notch() {
   };
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const clipRef = useRef<ClipboardHandle>(null);
+  /** The power button asks once ("click again"), so a stray click never quits E.V. */
+  const [quitAsk, setQuitAsk] = useState(false);
+  useEffect(() => {
+    if (!quitAsk) return;
+    const id = window.setTimeout(() => setQuitAsk(false), 3000);
+    return () => window.clearTimeout(id);
+  }, [quitAsk]);
 
   useEffect(() => {
     document.documentElement.classList.add("notch-root");
@@ -496,6 +504,13 @@ export function Notch() {
                 </button>
                 <button className="notch-tab" title="Open E.V" onClick={() => request({ kind: "openMain" })}>
                   <Icon name="expand" size={15} />
+                </button>
+                <button
+                  className={`notch-tab quit ${quitAsk ? "ask" : ""}`}
+                  title={quitAsk ? "Click again to quit E.V completely (the notch too)" : "Quit E.V completely"}
+                  onClick={() => (quitAsk ? void appQuitAll().catch(() => {}) : setQuitAsk(true))}
+                >
+                  <Icon name="power" size={15} />
                 </button>
               </div>
             </>

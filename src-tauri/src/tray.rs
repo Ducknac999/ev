@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Wry};
 
 const ID: &str = "ev-tray";
 static ITEMS: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -26,7 +26,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         recent.append(&MenuItem::with_id(app, format!("copy:{i}"), short(text), true, None::<&str>)?)?;
     }
     let open = MenuItem::with_id(app, "open", "Open E.V", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit E.V", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit E.V completely", true, None::<&str>)?;
     Menu::with_items(app, &[&copy_last, &recent, &PredefinedMenuItem::separator(app)?, &open, &quit])
 }
 
@@ -53,10 +53,7 @@ pub fn start(app: &AppHandle) -> tauri::Result<()> {
                     copy(&text);
                 }
             } else if id == "open" {
-                if let Some(main) = app.get_webview_window("main") {
-                    let _ = main.show();
-                    let _ = main.set_focus();
-                }
+                crate::app_mode::show_main(app);
             } else if id == "quit" {
                 app.exit(0);
             }

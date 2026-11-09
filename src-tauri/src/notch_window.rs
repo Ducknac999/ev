@@ -373,18 +373,16 @@ pub(crate) fn open_chat(app: &AppHandle) {
 /// Shows the main window (the notch's "Open E.V").
 #[tauri::command]
 pub fn notch_open_main(app: AppHandle) {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = main.unminimize();
-        let _ = main.show();
-        let _ = main.set_focus();
-    }
+    crate::app_mode::show_main(&app);
 }
 
 /// Chat panels off: E.V's main window hides and E.V lives in the notch.
 #[tauri::command]
 pub fn notch_main_visible(app: AppHandle, visible: bool) {
-    if let Some(main) = app.get_webview_window("main") {
-        let _ = if visible { main.show() } else { main.hide() };
+    if visible {
+        crate::app_mode::show_main(&app);
+    } else if let Some(main) = app.get_webview_window("main") {
+        let _ = main.hide();
     }
 }
 
