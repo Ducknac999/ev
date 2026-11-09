@@ -40,7 +40,7 @@ export function ConnectionsSettings() {
 
   const confirmPassphrase = async (id: string): Promise<boolean> => {
     if (!hasPassphrase) {
-      setMessage({ id, ok: false, text: "Set your passphrase first (Settings → Voice) — connecting needs it." });
+      setMessage({ id, ok: false, text: "Set your passphrase first (Settings → Approvals & safety) — connecting needs it." });
       return false;
     }
     if (!(await passphraseCheck(phrase).catch(() => false))) {

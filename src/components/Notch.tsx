@@ -374,10 +374,17 @@ export function Notch() {
     setDraft("");
   };
 
+  // ── Which sections show (Settings → Notch) ────────────────────────────────
+  const features = state?.features ?? { chat: true, music: true, shelf: true, dictation: true, caffeine: true };
+  const visibleTabs = TABS.filter((t) => (t.id === "clipboard" ? state?.clipboard?.on !== false : features[t.id as keyof typeof features] !== false));
+  useEffect(() => {
+    if (visibleTabs.length && !visibleTabs.some((t) => t.id === tab)) setTab(visibleTabs[0].id);
+  }, [visibleTabs, tab]);
+
   // ── Size ──────────────────────────────────────────────────────────────────
   const approval = approvals[0] ?? null;
   const banner = approval ? "approval" : files ? "files" : missed ? "missed" : voice ? "voice" : null;
-  const wings = Boolean(song?.playing || state?.talk.on || caffeine?.on || voice?.kind === "listening");
+  const wings = Boolean((features.music && song?.playing) || state?.talk.on || caffeine?.on || voice?.kind === "listening");
   const mode: "idle" | "wings" | "bubble" | "open" = open ? "open" : banner ? "bubble" : wings ? "wings" : "idle";
   // A full-screen app owns the top of the screen: the notch shows only for something to answer
   // (an approval, what E.V said) or when you open it with a shortcut.
@@ -432,7 +439,7 @@ export function Notch() {
               <div className="notch-wing left">
                 {voice?.kind === "listening" ? (
                   <Bars live className="mic" />
-                ) : artwork && song?.playing ? (
+                ) : features.music && artwork && song?.playing ? (
                   <img className="notch-art-mini" src={artwork} alt="" />
                 ) : state?.talk.on ? (
                   <Icon name="mic" size={14} className="talk-on" />
@@ -441,7 +448,7 @@ export function Notch() {
               <div className="notch-gap" style={{ width: geo.width }} />
               <div className="notch-wing right">
                 {caffeine?.on && <Icon name="cup" size={14} className={`notch-cup ${caffeine.lid ? "lid" : ""}`} />}
-                {song?.playing && <Bars live={song.playing} />}
+                {features.music && song?.playing && <Bars live={song.playing} />}
               </div>
             </>
           )}
@@ -449,7 +456,7 @@ export function Notch() {
           {mode === "open" && (
             <>
               <div className="notch-side left" style={{ width: (shape.w - geo.width) / 2 }}>
-                {TABS.filter((t) => t.id !== "clipboard" || state?.clipboard?.on !== false).map((t) => (
+                {visibleTabs.map((t) => (
                   <button
                     key={t.id}
                     className={`notch-tab ${tab === t.id ? "on" : ""}`}
@@ -471,6 +478,7 @@ export function Notch() {
                 >
                   <Icon name="mic" size={15} />
                 </button>
+                {(features.caffeine || caffeine?.on) && (
                 <button
                   className={`notch-tab ${caffeine?.on ? "on" : ""}`}
                   title={caffeine?.on ? `Caffeine is on${caffeine.lid ? " (lid closed too)" : ""} — click to let the Mac sleep` : "Caffeine: keep the Mac awake"}
@@ -478,6 +486,7 @@ export function Notch() {
                 >
                   <Icon name="cup" size={15} />
                 </button>
+                )}
                 <button
                   className={`notch-tab ${state?.chatPanels ? "on" : ""}`}
                   title={state?.chatPanels ? "Chat panels on — click to hide E.V's window and use the notch" : "Chat panels off — click to show E.V's window again"}

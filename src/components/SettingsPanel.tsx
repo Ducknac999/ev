@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { claudeStatus, type ClaudeStatus } from "../lib/ipc";
 import { KEYED_PROVIDERS, modelsFor, PROVIDER_ORDER, PROVIDERS } from "../providers/catalog";
 import { useSettings } from "../store/settings";
@@ -10,7 +10,16 @@ import { ConnectionsSettings } from "./ConnectionsSettings";
 import { GideonBrowserSettings } from "./GideonBrowserSettings";
 import { ClaudePlanUsage } from "./ClaudePlanUsage";
 import { SpendingSettings } from "./SpendingSettings";
-import { DictationSettings, InstantSettings, NotchSettings } from "./NotchSettings";
+import {
+  CaffeineSettings,
+  ClipboardSettings,
+  ClipboardShortcutSettings,
+  DictationSettings,
+  InstantSettings,
+  NotchFeaturesSettings,
+  NotchSettings,
+} from "./NotchSettings";
+import { GROUPS, pageInfo, searchSettings, type Page, type SettingEntry } from "./settingsSearch";
 import { UpdateSettings } from "./UpdateSettings";
 import { MoveInCard } from "./MoveInCard";
 import {
@@ -27,22 +36,14 @@ import {
   TerminalSettings,
 } from "./SettingsExtras";
 
-type Tab = "providers" | "claude" | "approvals" | "connections" | "activity" | "learned" | "terminal" | "skills" | "memory" | "schedule" | "voice" | "general" | "updates";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "updates", label: "Updates" },
-  { id: "providers", label: "API keys" },
-  { id: "claude", label: "Claude Code" },
-  { id: "approvals", label: "Approvals" },
-  { id: "connections", label: "Connections" },
-  { id: "activity", label: "Activity" },
-  { id: "learned", label: "Learned tasks" },
-  { id: "memory", label: "Memory" },
-  { id: "schedule", label: "Schedule" },
-  { id: "voice", label: "Voice" },
-  { id: "terminal", label: "Terminal" },
-  { id: "skills", label: "Skills & rules" },
-  { id: "general", label: "General" },
-];
+/** A card search can jump to (and briefly light up). */
+function Anchor({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <div className="settings-anchor" data-anchor={id}>
+      {children}
+    </div>
+  );
+}
 
 const splitList = (value: string) =>
   value
@@ -54,7 +55,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const saved = useSettings((s) => s.settings);
   const save = useSettings((s) => s.save);
   const [draft, setDraft] = useState<Settings>(() => structuredClone(saved));
-  const [tab, setTab] = useState<Tab>("providers");
+  const [tab, setTab] = useState<Page>("models");
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState(0);
+  const [found, setFound] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const hits = useMemo(() => searchSettings(query), [query]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claude, setClaude] = useState<ClaudeStatus | null>(null);
@@ -79,9 +86,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "f" && e.metaKey) {
+        e.preventDefault();
         e.stopPropagation();
-        onClose();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        if (query) setQuery("");
+        else onClose();
       } else if (e.key === "s" && e.metaKey) {
         e.preventDefault();
         e.stopPropagation();
@@ -99,6 +112,28 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       return next;
     });
 
+  /** Opens a search result: its page, scrolled to it, lit up for a moment. */
+  const open = (entry: SettingEntry) => {
+    setTab(entry.page);
+    setQuery("");
+    setFound(entry.anchor);
+  };
+  useEffect(() => {
+    if (!found) return;
+    const id = window.requestAnimationFrame(() => {
+      const el = bodyRef.current?.querySelector<HTMLElement>(`[data-anchor="${found}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      el?.classList.add("found");
+    });
+    const off = window.setTimeout(() => {
+      bodyRef.current?.querySelector(".settings-anchor.found")?.classList.remove("found");
+      setFound(null);
+    }, 1800);
+    return () => (window.cancelAnimationFrame(id), window.clearTimeout(off));
+  }, [found, tab]);
+  useEffect(() => setPicked(0), [query]);
+
+  const page = pageInfo(tab);
   const defaultKey = `${draft.defaultModel.provider}::${draft.defaultModel.model}`;
 
   return (
@@ -106,16 +141,115 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       <div className="settings" role="dialog" aria-modal="true" aria-label="Settings">
         <nav className="settings-nav">
           <h3>Settings</h3>
-          {TABS.map((t) => (
-            <button key={t.id} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>
-              {t.label}
-            </button>
-          ))}
+          <div className="settings-search">
+            <Icon name="search" size={13} />
+            <input
+              ref={searchRef}
+              value={query}
+              placeholder="Search  ⌘F"
+              aria-label="Search settings"
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") (e.preventDefault(), setPicked((i) => Math.min(hits.length - 1, i + 1)));
+                else if (e.key === "ArrowUp") (e.preventDefault(), setPicked((i) => Math.max(0, i - 1)));
+                else if (e.key === "Enter" && hits[picked]) (e.preventDefault(), open(hits[picked].entry));
+              }}
+            />
+            {query && (
+              <button className="settings-search-clear" title="Clear" onClick={() => setQuery("")}>
+                <Icon name="close" size={11} />
+              </button>
+            )}
+          </div>
+          {query.trim() ? (
+            <div className="settings-results" role="listbox" aria-label="Matching settings">
+              {hits.length === 0 ? (
+                <p className="settings-noresult">No setting matches “{query.trim()}”.</p>
+              ) : (
+                hits.map((h, i) => (
+                  <button
+                    key={`${h.entry.page}-${h.entry.title}`}
+                    role="option"
+                    aria-selected={i === picked}
+                    className={i === picked ? "active" : ""}
+                    onMouseEnter={() => setPicked(i)}
+                    onClick={() => open(h.entry)}
+                  >
+                    <span className="result-title">{h.entry.title}</span>
+                    <span className="result-where">
+                      <Icon name={pageInfo(h.entry.page).icon} size={11} /> {pageInfo(h.entry.page).label}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="settings-groups">
+              {GROUPS.map((g) => (
+                <div key={g.label} className="settings-group">
+                  <div className="settings-group-label">{g.label}</div>
+                  {g.pages.map((p) => (
+                    <button key={p.id} className={tab === p.id ? "active" : ""} onClick={() => setTab(p.id)}>
+                      <Icon name={p.icon} size={14} />
+                      <span>{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </nav>
 
-        <div className="settings-body">
-          {tab === "providers" && (
+        <div className="settings-body" ref={bodyRef}>
+          <header className="settings-page-head">
+            <span className="settings-page-icon">
+              <Icon name={page.icon} size={18} />
+            </span>
+            <div>
+              <h2>{page.label}</h2>
+              <p>{page.blurb}</p>
+            </div>
+          </header>
+          {tab === "models" && (
             <>
+              <Anchor id="default-model">
+                <div className="settings-card">
+                  <h4>Default model</h4>
+              <label className="field">
+                <span>Default model for new chats</span>
+                <select
+                  value={defaultKey}
+                  onChange={(e) => {
+                    const [provider, model] = e.target.value.split("::") as [ModelRef["provider"], string];
+                    update((d) => void (d.defaultModel = { provider, model }));
+                  }}
+                >
+                  {PROVIDER_ORDER.map((p) => (
+                    <optgroup key={p} label={PROVIDERS[p].label}>
+                      {modelsFor(p, draft).map((m) => (
+                        <option key={m.id} value={`${p}::${m.id}`}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>When a screen question needs a picture but the chat's model can't see pictures</span>
+                <select value={draft.screenPicture} onChange={(e) => update((d) => void (d.screenPicture = e.target.value as Settings["screenPicture"]))}>
+                  <option value="ask">Ask me first (recommended)</option>
+                  <option value="vision">Use Flash · Vision just for that look (extra tokens)</option>
+                  <option value="text">Never — read the screen as text only (fewest tokens)</option>
+                </select>
+              </label>
+                </div>
+              </Anchor>
+              <Anchor id="spending">
+                <SpendingSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="keys">
+                <div className="settings-stack">
               <p className="settings-intro">
                 Each chat takes a key no other chat is using, so parallel chats never share a limit while a free key
                 exists. When a key hits a limit, the chat moves to the next free key and the used-up key is skipped until
@@ -140,10 +274,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   </label>
                 </div>
               ))}
+                </div>
+              </Anchor>
             </>
           )}
 
           {tab === "claude" && (
+            <Anchor id="claude">
             <div className="settings-card">
               <div className={`status-line ${claude?.available ? "ok" : "bad"}`}>
                 <Icon name={claude?.available ? "check" : "alert"} size={14} />
@@ -178,12 +315,47 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 />
               </label>
             </div>
+            </Anchor>
+          )}
+
+          {tab === "skills" && (
+            <>
+              <Anchor id="system-prompt">
+                <div className="settings-card">
+                  <h4>Instructions for every chat</h4>
+              <label className="field">
+                <span>System prompt (all providers)</span>
+                <textarea
+                  rows={5}
+                  value={draft.systemPrompt}
+                  placeholder="Optional instructions prepended to every conversation"
+                  onChange={(e) => update((d) => void (d.systemPrompt = e.target.value))}
+                />
+              </label>
+                </div>
+              </Anchor>
+              <Anchor id="skills">
+                <SkillsSettings />
+              </Anchor>
+            </>
+          )}
+          {tab === "memory" && (
+            <Anchor id="memory">
+              <MemorySettings />
+            </Anchor>
+          )}
+          {tab === "learned" && (
+            <Anchor id="learned">
+              <LearnedTasksSettings />
+            </Anchor>
           )}
 
           {tab === "voice" && (
             <>
-            <VoiceEngineSettings draft={draft} update={update} />
-            <DictationSettings draft={draft} update={update} />
+              <Anchor id="voice-engine">
+                <VoiceEngineSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="replies">
             <div className="settings-card">
               <h4>Replies: when E.V talks</h4>
               <p className="settings-intro">One rule everywhere: answered the way you asked. Under each answer E.V notes why it did or didn't speak.</p>
@@ -211,6 +383,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </label>
               <p className="settings-intro">🔇 in the top bar mutes E.V completely: nothing is said, everything shows in the notch.</p>
             </div>
+              </Anchor>
+              <Anchor id="talk-mode">
             <div className="settings-card">
               <h4>Hey E.V · Talk mode</h4>
               <label className="check-row">
@@ -263,85 +437,31 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </label>
 
             </div>
-            <HoldToTalkSettings draft={draft} update={update} />
-            <QuickPanelSettings draft={draft} update={update} />
-            <PassphraseSettings />
+              </Anchor>
             </>
           )}
-
-          {tab === "terminal" && <TerminalSettings draft={draft} update={update} />}
-          {tab === "skills" && <SkillsSettings />}
-          {tab === "approvals" && (
+          {tab === "dictation" && (
+            <Anchor id="dictation">
+              <DictationSettings draft={draft} update={update} />
+            </Anchor>
+          )}
+          {tab === "shortcuts" && (
             <>
-              <ApprovalKeysSettings draft={draft} update={update} />
-              <ApprovalsSettings />
-            </>
-          )}
-          {tab === "connections" && (
-            <>
-              <GideonBrowserSettings />
-              <ConnectionsSettings />
-            </>
-          )}
-          {tab === "activity" && <ActivitySettings />}
-          {tab === "learned" && <LearnedTasksSettings />}
-          {tab === "memory" && <MemorySettings />}
-          {tab === "schedule" && <ScheduleSettings draft={draft} update={update} />}
-
-          {tab === "general" && (
-            <div className="settings-card">
-              <label className="field">
-                <span>Top bar style</span>
-                <select value={draft.topBarStyle} onChange={(e) => update((d) => void (d.topBarStyle = e.target.value as typeof d.topBarStyle))}>
-                  <option value="full">Full</option>
-                  <option value="compact">Compact — icons only</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Show the top bar</span>
-                <select value={draft.topBarShow} onChange={(e) => update((d) => void (d.topBarShow = e.target.value as typeof d.topBarShow))}>
-                  <option value="always">Always</option>
-                  <option value="hover">When the cursor reaches the top (or ⌥⌘B)</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Default model for new chats</span>
-                <select
-                  value={defaultKey}
-                  onChange={(e) => {
-                    const [provider, model] = e.target.value.split("::") as [ModelRef["provider"], string];
-                    update((d) => void (d.defaultModel = { provider, model }));
-                  }}
-                >
-                  {PROVIDER_ORDER.map((p) => (
-                    <optgroup key={p} label={PROVIDERS[p].label}>
-                      {modelsFor(p, draft).map((m) => (
-                        <option key={m.id} value={`${p}::${m.id}`}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>When a screen question needs a picture but the chat's model can't see pictures</span>
-                <select value={draft.screenPicture} onChange={(e) => update((d) => void (d.screenPicture = e.target.value as Settings["screenPicture"]))}>
-                  <option value="ask">Ask me first (recommended)</option>
-                  <option value="vision">Use Flash · Vision just for that look (extra tokens)</option>
-                  <option value="text">Never — read the screen as text only (fewest tokens)</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>System prompt (all providers)</span>
-                <textarea
-                  rows={5}
-                  value={draft.systemPrompt}
-                  placeholder="Optional instructions prepended to every conversation"
-                  onChange={(e) => update((d) => void (d.systemPrompt = e.target.value))}
-                />
-              </label>
-              <h4>Keyboard shortcuts</h4>
+              <Anchor id="hold-to-talk">
+                <HoldToTalkSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="quick-panel">
+                <QuickPanelSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="clipboard-key">
+                <ClipboardShortcutSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="approval-keys">
+                <ApprovalKeysSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="app-shortcuts">
+                <div className="settings-card">
+                  <h4>Inside E.V</h4>
               <dl className="shortcuts">
                 {[
                   ["⌘N", "New session (Claude Code, Gemini, terminal, command)"],
@@ -366,21 +486,104 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 ))}
               </dl>
-            </div>
+                </div>
+              </Anchor>
+            </>
           )}
-          {tab === "general" && <NotchSettings draft={draft} update={update} />}
-          {tab === "general" && <InstantSettings draft={draft} update={update} />}
-          {tab === "general" && <SpendingSettings draft={draft} update={update} />}
-          {tab === "updates" && <UpdateSettings />}
-          {tab === "general" && <MoveInCard />}
+
+          {tab === "notch" && (
+            <>
+              <Anchor id="notch">
+                <NotchSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="notch-features">
+                <NotchFeaturesSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="clipboard">
+                <ClipboardSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="caffeine">
+                <CaffeineSettings draft={draft} update={update} />
+              </Anchor>
+            </>
+          )}
+
+          {tab === "approvals" && (
+            <>
+              <Anchor id="approvals">
+                <ApprovalsSettings />
+              </Anchor>
+              <Anchor id="passphrase">
+                <PassphraseSettings />
+              </Anchor>
+            </>
+          )}
+          {tab === "connections" && (
+            <>
+              <Anchor id="connections">
+                <ConnectionsSettings />
+              </Anchor>
+              <Anchor id="browser">
+                <GideonBrowserSettings />
+              </Anchor>
+            </>
+          )}
+          {tab === "instant" && (
+            <Anchor id="instant">
+              <InstantSettings draft={draft} update={update} />
+            </Anchor>
+          )}
+          {tab === "schedule" && (
+            <Anchor id="schedule">
+              <ScheduleSettings draft={draft} update={update} />
+            </Anchor>
+          )}
+          {tab === "activity" && (
+            <Anchor id="activity">
+              <ActivitySettings />
+            </Anchor>
+          )}
+
           {tab === "general" && (
+            <>
+              <Anchor id="look">
+                <div className="settings-card">
+                  <h4>Look</h4>
+              <label className="field">
+                <span>Top bar style</span>
+                <select value={draft.topBarStyle} onChange={(e) => update((d) => void (d.topBarStyle = e.target.value as typeof d.topBarStyle))}>
+                  <option value="full">Full</option>
+                  <option value="compact">Compact — icons only</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Show the top bar</span>
+                <select value={draft.topBarShow} onChange={(e) => update((d) => void (d.topBarShow = e.target.value as typeof d.topBarShow))}>
+                  <option value="always">Always</option>
+                  <option value="hover">When the cursor reaches the top (or ⌥⌘B)</option>
+                </select>
+              </label>
+                </div>
+              </Anchor>
+              <Anchor id="terminal">
+                <TerminalSettings draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="setup">
             <div className="settings-card">
               <h4>Setup</h4>
-              <p className="settings-intro">Go through the start window again: coding agents, keys, local models, passphrase, permissions and voice.</p>
+              <p className="settings-intro">Go through the start window again: coding agents, keys, local models, passphrase, permissions, voice and the notch.</p>
               <button className="btn" onClick={() => void useSettings.getState().save({ ...useSettings.getState().settings, onboarded: false }).then(onClose)}>
                 Run setup again
               </button>
             </div>
+          </Anchor>
+          <Anchor id="move-in"><MoveInCard /></Anchor>
+            </>
+          )}
+          {tab === "updates" && (
+            <Anchor id="updates">
+              <UpdateSettings />
+            </Anchor>
           )}
         </div>
 

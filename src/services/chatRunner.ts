@@ -895,7 +895,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     base = provider === "gemini" ? await geminiContents(history) : await textOnlyMessages(history, undefined, seesImages(chat.model.model));
 
     if (provider === "deepseek" && !(await withinDailyLimit(chatId, reply.id, signal, Boolean(options.announce)))) {
-      throw new Error("Not sent: today's DeepSeek spending limit is reached (Settings → General → Spending).");
+      throw new Error("Not sent: today's DeepSeek spending limit is reached (Settings → Models & API keys → Spending).");
     }
     for (let step = 0; ; step++) {
       if (step >= MAX_STEPS) {

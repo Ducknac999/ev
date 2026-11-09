@@ -18,7 +18,8 @@ import { KEY_PAGES, PROVIDER_BASE, PROVIDERS } from "../providers/catalog";
 import { fits, LOCAL_MODELS, pullModel } from "../services/localModels";
 import { useSettings } from "../store/settings";
 import type { KeyedProviderId, Settings } from "../types";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
+import { NotchFeatureSwitches } from "./NotchSettings";
 import { VoiceEngineSettings } from "./VoiceEngineSettings";
 
 /**
@@ -26,7 +27,7 @@ import { VoiceEngineSettings } from "./VoiceEngineSettings";
  * and done later in Settings; nothing here is required to start using E.V.
  */
 
-const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Done"] as const;
+const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Notch", "Done"] as const;
 
 const KEY_PROVIDERS: KeyedProviderId[] = ["deepseek", "openai", "anthropic", "gemini", "openrouter", "xai", "mistral", "groq"];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -445,7 +446,79 @@ function VoiceStep() {
         />
         <span>Hold to talk from any app ({settings.voice.holdToTalk.shortcut.replace(/\+/g, " + ")})</span>
       </label>
-      <p className="ob-hint">Quick panel from any app: {settings.panel.shortcut.replace(/\+/g, " + ")}. Change any shortcut in Settings → Voice.</p>
+      <p className="ob-hint">Quick panel from any app: {settings.panel.shortcut.replace(/\+/g, " + ")}. Change any shortcut in Settings → Shortcuts.</p>
+      <SkipNote />
+    </>
+  );
+}
+
+/** What the open notch looks like, so people know what they're turning on. */
+function NotchPreview() {
+  const left: IconName[] = ["chat", "music", "tray", "clipboard", "wave"];
+  const right: IconName[] = ["mic", "cup", "split", "expand"];
+  return (
+    <div className="ob-notch-preview" aria-hidden="true">
+      <div className="ob-notch-shape">
+        <div className="ob-notch-top">
+          <div className="ob-notch-side">
+            {left.map((n, i) => (
+              <span key={n} className={i === 3 ? "on" : ""}>
+                <Icon name={n} size={12} />
+              </span>
+            ))}
+          </div>
+          <div className="ob-notch-camera" />
+          <div className="ob-notch-side right">
+            {right.map((n) => (
+              <span key={n}>
+                <Icon name={n} size={12} />
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="ob-notch-card">
+          <i style={{ width: "78%" }} />
+          <i style={{ width: "52%" }} />
+        </div>
+        <div className="ob-notch-card">
+          <i style={{ width: "64%" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotchStep() {
+  const settings = useSettings((s) => s.settings);
+  const update = (fn: (d: Settings) => void) => void change(fn);
+  const on = settings.notch.mode === "ev";
+  return (
+    <>
+      <h2>The notch</h2>
+      <p className="ob-lead">
+        E.V can live in your Mac's notch (a small pill at the top on Macs without one). Hover it, or use a shortcut, and it opens over any app. Choose what it
+        shows — or don't use it at all.
+      </p>
+      <NotchPreview />
+      <label className="check-row switch-row ob-notch-main">
+        <span className="switch-text">
+          <strong>Use the E.V notch</strong>
+          <small>{on ? "On — choose what it shows below." : "Off — E.V works the same without it. Turn it on any time in Settings → Notch."}</small>
+        </span>
+        <input type="checkbox" checked={on} onChange={(e) => update((d) => void (d.notch.mode = e.target.checked ? "ev" : "off"))} />
+      </label>
+      {on && (
+        <>
+          <NotchFeatureSwitches settings={settings} update={update} />
+          <label className="check-row switch-row ob-notch-full">
+            <span className="switch-text">
+              <strong>Step aside in full-screen apps</strong>
+              <small>So it never covers an app's top bar. Push the pointer to the top edge to slide it out.</small>
+            </span>
+            <input type="checkbox" checked={settings.notch.hideInFullscreen} onChange={(e) => update((d) => void (d.notch.hideInFullscreen = e.target.checked))} />
+          </label>
+        </>
+      )}
       <SkipNote />
     </>
   );
@@ -458,6 +531,7 @@ function DoneStep() {
     [s.agents.claude || s.agents.codex, s.agents.claude && s.agents.codex ? "Claude Code and Codex" : s.agents.claude ? "Claude Code" : s.agents.codex ? "Codex" : "No coding agent yet"],
     [keys.length > 0, keys.length ? `Keys: ${keys.join(", ")}` : "No API keys yet"],
     [s.providers.ollama.customModels.length > 0, s.providers.ollama.customModels.length ? `Local: ${s.providers.ollama.customModels.join(", ")}` : "No local model"],
+    [s.notch.mode === "ev", s.notch.mode === "ev" ? "The E.V notch is on" : "No notch (turn it on in Settings → Notch)"],
   ];
   return (
     <>
@@ -481,7 +555,7 @@ function DoneStep() {
       <div className="ob-update-note">
         <Icon name="download" size={14} />
         <span>
-          To update E.V later: <strong>Settings → General → Check for updates</strong>. It shows what's new and installs it in one click.
+          To update E.V later: <strong>Settings → Updates</strong>. It shows what's new and installs it in one click.
         </span>
       </div>
     </>
@@ -547,7 +621,8 @@ export function Onboarding() {
               {step === 3 && <PassphraseStep />}
               {step === 4 && <PermissionsStep />}
               {step === 5 && <VoiceStep />}
-              {step === 6 && <DoneStep />}
+              {step === 6 && <NotchStep />}
+              {step === 7 && <DoneStep />}
               </StepGuard>
             </section>
             <footer className="ob-foot">

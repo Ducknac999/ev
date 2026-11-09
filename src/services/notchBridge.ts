@@ -31,6 +31,7 @@ export interface NotchState {
   lyrics: Settings["notch"]["lyrics"];
   caffeine: Settings["notch"]["caffeine"];
   hideInFullscreen: boolean;
+  features: Settings["notch"]["features"];
   /** Clipboard history is on (the notch shows its tab). */
   clipboard: { on: boolean; shortcut: string };
 }
@@ -89,6 +90,7 @@ function snapshot(): NotchState {
     lyrics: settings.notch.lyrics,
     caffeine: settings.notch.caffeine,
     hideInFullscreen: settings.notch.hideInFullscreen,
+    features: settings.notch.features,
     clipboard: { on: settings.notch.clipboard.enabled, shortcut: settings.notch.clipboard.shortcut },
   };
 }

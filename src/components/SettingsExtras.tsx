@@ -652,7 +652,7 @@ export function ApprovalsSettings() {
   const changed = JSON.stringify(draft) !== JSON.stringify(rules);
   const save = async () => {
     if (!hasPassphrase) {
-      setMessage({ ok: false, text: "Set your passphrase first (Settings → Voice) — changing these rules needs it." });
+      setMessage({ ok: false, text: "Set your passphrase first (Settings → Approvals & safety) — changing these rules needs it." });
       return;
     }
     if (!(await passphraseCheck(phrase).catch(() => false))) {

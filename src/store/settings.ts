@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   router: { enabled: true },
   notch: { mode: "ev", chatPanels: true, lyrics: "keep", caffeine: { lid: false, batteryLimit: 0, minutes: 0 },
     hideInFullscreen: true,
+    features: { chat: true, music: true, shelf: true, dictation: true, caffeine: true },
     clipboard: { enabled: true, shortcut: "shift+command+c", limit: 100, ignoreApps: ["1Password", "Bitwarden", "Keychain Access", "Passwords", "Dashlane", "LastPass"] },
   },
   spending: { dailyLimit: 0 },
@@ -149,6 +150,7 @@ function normalize(raw: unknown): Settings {
     lyrics: notch.lyrics === "never" ? "never" : "keep",
     caffeine: { lid: caffeine.lid === true, batteryLimit: whole(caffeine.batteryLimit, 95), minutes: whole(caffeine.minutes, 24 * 60) },
     hideInFullscreen: notch.hideInFullscreen !== false,
+    features: normalizeFeatures(notch.features),
     clipboard: normalizeClipboard(notch.clipboard),
   };
   const limit = Number(input.spending?.dailyLimit);
@@ -156,7 +158,7 @@ function normalize(raw: unknown): Settings {
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };
   settings.agents = { claude: input.agents?.claude !== false, codex: input.agents?.codex === true };
   settings.onboarded = input.onboarded === true;
-  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(6, Math.round(input.onboardStart)));
+  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(7, Math.round(input.onboardStart)));
   if (input.movedFromPersonal === true) settings.movedFromPersonal = true;
   // 1.0.2 had one setting ("always" | "auto" | "compact"); it splits into style and showing.
   const old = (input as { topBar?: string }).topBar;
@@ -233,6 +235,11 @@ export const useSettings = create<SettingsState>((set, get) => ({
     void get().save({ ...current, recentFolders }).catch(() => {});
   },
 }));
+
+export function normalizeFeatures(input: unknown): Settings["notch"]["features"] {
+  const f = (input ?? {}) as Partial<Settings["notch"]["features"]>;
+  return { chat: f.chat !== false, music: f.music !== false, shelf: f.shelf !== false, dictation: f.dictation !== false, caffeine: f.caffeine !== false };
+}
 
 export function normalizeClipboard(input: unknown): Settings["notch"]["clipboard"] {
   const d = DEFAULT_SETTINGS.notch.clipboard;

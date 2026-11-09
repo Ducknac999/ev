@@ -4,20 +4,17 @@ import { useClipboardError } from "../services/notchBridge";
 import type { Settings } from "../types";
 import { ComboField } from "./SettingsExtras";
 
-/** Settings → General → Notch: E.V's own notch (or Vorssaint's), chat panels, lyrics, ☕. */
-export function NotchSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
+type Update = (fn: (d: Settings) => void) => void;
+
+/** Settings → Notch: E.V's own notch (or Vorssaint's), chat panels, full screen. */
+export function NotchSettings({ draft, update }: { draft: Settings; update: Update }) {
   const notch = draft.notch;
-  const [caffeine, setCaffeine] = useState<Caffeine | null>(null);
-  const [note, setNote] = useState("");
-  useEffect(() => {
-    void caffeineStatus().then(setCaffeine).catch(() => {});
-  }, []);
   return (
     <div className="settings-card">
-      <h4>Notch</h4>
+      <h4>The notch</h4>
       <p className="settings-intro">
-        E.V's notch sits over your Mac's notch: what E.V heard and answered, approvals, a music card with lyrics, a drop box for files, ☕ and a small chat.
-        Hover it to open it.
+        E.V's notch sits over your Mac's notch (or as a small pill at the top on Macs without one): what E.V heard and answered, approvals, music, the
+        clipboard and more. Hover it to open it.
       </p>
       <label className="field">
         <span>Notch</span>
@@ -37,65 +34,131 @@ export function NotchSettings({ draft, update }: { draft: Settings; update: (fn:
             <input type="checkbox" checked={notch.hideInFullscreen} onChange={(e) => update((d) => void (d.notch.hideInFullscreen = e.target.checked))} />
             <span>Hide the notch while an app is full screen, so it never covers the app's top bar. Push the pointer to the top edge to slide it out; approvals, answers and ⌘⇧C still show it</span>
           </label>
-          <label className="field">
-            <span>Lyrics</span>
-            <select value={notch.lyrics} onChange={(e) => update((d) => void (d.notch.lyrics = e.target.value as Settings["notch"]["lyrics"]))}>
-              <option value="keep">Save the last 100 songs (about 0.5 MB) so they show instantly</option>
-              <option value="never">Never save them (fetched each time)</option>
-            </select>
-          </label>
-          <h4 className="settings-sub">☕ Caffeine</h4>
-          <p className="settings-intro">The ☕ in the notch keeps your Mac awake until you click it again — tasks and E.V keep running.</p>
-          <label className="check-row">
-            <input type="checkbox" checked={notch.caffeine.lid} onChange={(e) => update((d) => void (d.notch.caffeine.lid = e.target.checked))} />
-            <span>
-              Even with the lid closed (on battery too).{" "}
-              {caffeine?.lidReady ? "Set up — switches on and off without a password." : "Asks for your Mac password once to set up."}
-            </span>
-          </label>
-          <label className="field">
-            <span>Turn ☕ off by itself</span>
-            <select value={notch.caffeine.minutes} onChange={(e) => update((d) => void (d.notch.caffeine.minutes = Number(e.target.value)))}>
-              <option value={0}>Never — only when I click it</option>
-              <option value={30}>After 30 minutes</option>
-              <option value={60}>After 1 hour</option>
-              <option value={120}>After 2 hours</option>
-              <option value={240}>After 4 hours</option>
-              <option value={480}>After 8 hours</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Battery</span>
-            <select value={notch.caffeine.batteryLimit} onChange={(e) => update((d) => void (d.notch.caffeine.batteryLimit = Number(e.target.value)))}>
-              <option value={0}>Keep going, whatever the battery</option>
-              <option value={10}>Turn off below 10%</option>
-              <option value={20}>Turn off below 20%</option>
-              <option value={30}>Turn off below 30%</option>
-              <option value={50}>Turn off below 50%</option>
-            </select>
-          </label>
-          <p className="settings-intro">If E.V quits or crashes while the lid-closed mode is on, sleep is turned back on — your Mac is never left unable to sleep.</p>
-          {caffeine?.lidReady && (
-            <button
-              className="btn ghost"
-              onClick={() =>
-                void caffeineRemovePermission()
-                  .then((c) => (setCaffeine(c), setNote("Removed.")))
-                  .catch((err) => setNote(String(err)))
-              }
-            >
-              Remove the lid-closed permission
-            </button>
-          )}
-          {note && <p className="settings-intro">{note}</p>}
-          <ClipboardSettings draft={draft} update={update} />
         </>
       )}
     </div>
   );
 }
 
-/** Settings → General → Instant actions: the on-device router (services/router.ts). */
+/** What the notch shows, one switch each (Settings → Notch, and the setup window's Notch step). */
+export const NOTCH_FEATURES: { key: keyof Settings["notch"]["features"] | "clipboard"; label: string; detail: string }[] = [
+  { key: "chat", label: "Chat", detail: "A mini chat with E.V from any app" },
+  { key: "music", label: "Music", detail: "The song playing now, with controls and synced lyrics" },
+  { key: "shelf", label: "Drop box", detail: "Park files, then drag them out wherever you need them" },
+  { key: "clipboard", label: "Clipboard history", detail: "Everything you copy — ⌘⇧C, search, paste. Passwords are never kept" },
+  { key: "dictation", label: "Dictation history", detail: "Your last 20 dictations, ready to copy" },
+  { key: "caffeine", label: "☕ Caffeine", detail: "Keep your Mac awake, even with the lid closed" },
+];
+
+export function NotchFeatureSwitches({ settings, update }: { settings: Settings; update: Update }) {
+  return (
+    <div className="switch-list">
+      {NOTCH_FEATURES.map((f) => {
+        const on = f.key === "clipboard" ? settings.notch.clipboard.enabled : settings.notch.features[f.key];
+        return (
+          <label key={f.key} className="check-row switch-row">
+            <span className="switch-text">
+              <strong>{f.label}</strong>
+              <small>{f.detail}</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={(e) =>
+                update((d) => {
+                  if (f.key === "clipboard") d.notch.clipboard.enabled = e.target.checked;
+                  else d.notch.features[f.key] = e.target.checked;
+                })
+              }
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Settings → Notch → What it shows (plus lyrics). */
+export function NotchFeaturesSettings({ draft, update }: { draft: Settings; update: Update }) {
+  if (draft.notch.mode !== "ev") return null;
+  return (
+    <div className="settings-card">
+      <h4>What the notch shows</h4>
+      <p className="settings-intro">Turn off what you don't use — it disappears from the notch.</p>
+      <NotchFeatureSwitches settings={draft} update={update} />
+      {draft.notch.features.music && (
+        <label className="field">
+          <span>Lyrics</span>
+          <select value={draft.notch.lyrics} onChange={(e) => update((d) => void (d.notch.lyrics = e.target.value as Settings["notch"]["lyrics"]))}>
+            <option value="keep">Save the last 100 songs (about 0.5 MB) so they show instantly</option>
+            <option value="never">Never save them (fetched each time)</option>
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** Settings → Notch → ☕ Caffeine. */
+export function CaffeineSettings({ draft, update }: { draft: Settings; update: Update }) {
+  const notch = draft.notch;
+  const [caffeine, setCaffeine] = useState<Caffeine | null>(null);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    void caffeineStatus().then(setCaffeine).catch(() => {});
+  }, []);
+  if (notch.mode !== "ev" || !notch.features.caffeine) return null;
+  return (
+    <div className="settings-card">
+      <h4>☕ Caffeine</h4>
+      <p className="settings-intro">The ☕ in the notch keeps your Mac awake until you click it again — tasks and E.V keep running.</p>
+      <label className="check-row">
+        <input type="checkbox" checked={notch.caffeine.lid} onChange={(e) => update((d) => void (d.notch.caffeine.lid = e.target.checked))} />
+        <span>
+          Even with the lid closed (on battery too).{" "}
+          {caffeine?.lidReady ? "Set up — switches on and off without a password." : "Asks for your Mac password once to set up."}
+        </span>
+      </label>
+      <label className="field">
+        <span>Turn ☕ off by itself</span>
+        <select value={notch.caffeine.minutes} onChange={(e) => update((d) => void (d.notch.caffeine.minutes = Number(e.target.value)))}>
+          <option value={0}>Never — only when I click it</option>
+          <option value={30}>After 30 minutes</option>
+          <option value={60}>After 1 hour</option>
+          <option value={120}>After 2 hours</option>
+          <option value={240}>After 4 hours</option>
+          <option value={480}>After 8 hours</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>Battery</span>
+        <select value={notch.caffeine.batteryLimit} onChange={(e) => update((d) => void (d.notch.caffeine.batteryLimit = Number(e.target.value)))}>
+          <option value={0}>Keep going, whatever the battery</option>
+          <option value={10}>Turn off below 10%</option>
+          <option value={20}>Turn off below 20%</option>
+          <option value={30}>Turn off below 30%</option>
+          <option value={50}>Turn off below 50%</option>
+        </select>
+      </label>
+      <p className="settings-intro">If E.V quits or crashes while the lid-closed mode is on, sleep is turned back on — your Mac is never left unable to sleep.</p>
+      {caffeine?.lidReady && (
+        <button
+          className="btn ghost"
+          onClick={() =>
+            void caffeineRemovePermission()
+              .then((c) => (setCaffeine(c), setNote("Removed.")))
+              .catch((err) => setNote(String(err)))
+          }
+        >
+          Remove the lid-closed permission
+        </button>
+      )}
+      {note && <p className="settings-intro">{note}</p>}
+    </div>
+  );
+}
+
+/** Settings → Instant actions: the on-device router (services/router.ts). */
 export function InstantSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
   return (
     <div className="settings-card">
@@ -113,7 +176,7 @@ export function InstantSettings({ draft, update }: { draft: Settings; update: (f
   );
 }
 
-/** Settings → Voice → Dictation: typing by voice into any app, the clean-up, your dictionary. */
+/** Settings → Dictation: typing by voice into any app, the clean-up, your dictionary. */
 export function DictationSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
   const d = draft.voice.dictation;
   return (
@@ -169,15 +232,16 @@ export function DictationSettings({ draft, update }: { draft: Settings; update: 
   );
 }
 
-/** Settings → General → Notch → Clipboard: the history of what you copy, in the notch. */
-function ClipboardSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
+/** Settings → Notch → Clipboard: the history of what you copy, in the notch. */
+export function ClipboardSettings({ draft, update }: { draft: Settings; update: (fn: (d: Settings) => void) => void }) {
   const c = draft.notch.clipboard;
   const error = useClipboardError((s) => s.error);
   const others = [draft.panel.shortcut, draft.approvalKeys.approve, draft.approvalKeys.always, draft.approvalKeys.cancel, draft.voice.holdToTalk.enabled ? draft.voice.holdToTalk.shortcut : ""];
   const set = (fn: (clip: Settings["notch"]["clipboard"]) => void) => update((d) => void fn(d.notch.clipboard));
+  if (draft.notch.mode !== "ev") return null;
   return (
-    <>
-      <h4 className="settings-sub">📋 Clipboard</h4>
+    <div className="settings-card">
+      <h4>📋 Clipboard</h4>
       <p className="settings-intro">
         Everything you copy — text, links, images, files — in the notch's Clipboard tab. Press the shortcut in any app, type to search, Enter pastes it where you
         were (⌥Enter only copies, ⌘1–⌘9 paste one of the first nine). Kept on this Mac only. Passwords from password managers are never kept.
@@ -216,6 +280,19 @@ function ClipboardSettings({ draft, update }: { draft: Settings; update: (fn: (d
         </>
       )}
       {error && <p className="settings-error">{error}</p>}
-    </>
+    </div>
+  );
+}
+
+/** Settings → Shortcuts: the clipboard history's shortcut (the same setting as Settings → Notch). */
+export function ClipboardShortcutSettings({ draft, update }: { draft: Settings; update: Update }) {
+  const c = draft.notch.clipboard;
+  if (draft.notch.mode !== "ev" || !c.enabled) return null;
+  return (
+    <div className="settings-card">
+      <h4>Clipboard history</h4>
+      <p className="settings-intro">Opens everything you copied, in the notch, from any app.</p>
+      <ComboField label="Open the history" value={c.shortcut} onChange={(combo) => update((d) => void (d.notch.clipboard.shortcut = combo))} />
+    </div>
   );
 }

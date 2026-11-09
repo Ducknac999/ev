@@ -330,6 +330,8 @@ export interface Settings {
       /** ☕ turns off by itself after this many minutes (0 = when you turn it off). */
       minutes: number;
     };
+    /** Which of the notch's sections show (Clipboard has its own switch: `clipboard.enabled`). */
+    features: { chat: boolean; music: boolean; shelf: boolean; dictation: boolean; caffeine: boolean };
     /** The notch hides while an app is full screen (it would cover the app's top bar), like Vorssaint's. */
     hideInFullscreen: boolean;
     /** Clipboard history in the notch: what you copy, kept on this Mac (passwords never). */

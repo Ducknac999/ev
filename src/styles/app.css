@@ -690,8 +690,8 @@ button.att-chip:hover { border-color: var(--line-strong); box-shadow: var(--glow
 
 /* Settings */
 .settings {
-  display: grid; grid-template-columns: 180px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
-  width: min(880px, 100%); height: min(660px, calc(100vh - 60px));
+  display: grid; grid-template-columns: 216px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  width: min(940px, 100%); height: min(700px, calc(100vh - 60px));
   background: var(--glass-strong); backdrop-filter: blur(16px);
   border: 1px solid var(--line-strong); border-radius: var(--radius);
   box-shadow: var(--shadow), 0 0 30px rgba(var(--neon-rgb), 0.18); overflow: hidden;
@@ -1921,3 +1921,69 @@ button.notch-file.all { border: 0; font: inherit; cursor: pointer; padding: 7px;
 
 /* A full-screen app in front: the notch steps aside. */
 .notch-shape.hidden { opacity: 0; pointer-events: none; }
+
+/* Settings: grouped sidebar, search, page header, switches */
+.settings-nav { overflow-y: auto; gap: 8px; }
+.settings-search { display: flex; align-items: center; gap: 6px; margin: 0 2px 4px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 9px; background: rgba(0, 0, 0, 0.35); color: var(--muted); }
+.settings-search:focus-within { border-color: var(--line-strong); box-shadow: var(--glow); }
+.settings-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: 500 12px var(--sans, inherit); }
+.settings-search-clear { border: 0; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; padding: 2px; }
+.settings-groups { display: flex; flex-direction: column; gap: 10px; }
+.settings-group { display: flex; flex-direction: column; gap: 1px; }
+.settings-group-label { padding: 2px 10px 4px; font: 600 9.5px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.settings-nav .settings-group button, .settings-results button { display: flex; align-items: center; gap: 9px; text-align: left; padding: 6px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; font: 500 12px var(--sans, inherit); }
+.settings-nav .settings-group button svg { flex: none; opacity: 0.8; }
+.settings-nav .settings-group button:hover, .settings-results button:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.settings-nav .settings-group button.active { background: rgba(var(--neon-rgb), 0.1); color: var(--neon); border-color: rgba(var(--neon-rgb), 0.25); }
+.settings-nav .settings-group button.active svg { opacity: 1; }
+.settings-results { display: flex; flex-direction: column; gap: 2px; }
+.settings-results button { flex-direction: column; align-items: flex-start; gap: 2px; }
+.settings-results button.active { background: rgba(var(--neon-rgb), 0.1); border-color: rgba(var(--neon-rgb), 0.25); }
+.settings-results .result-title { color: var(--text); font-size: 12px; }
+.settings-results .result-where { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10.5px; }
+.settings-noresult { margin: 6px 10px; color: var(--muted); font-size: 11.5px; }
+.settings-page-head { display: flex; align-items: center; gap: 12px; padding: 2px 2px 6px; }
+.settings-page-head h2 { margin: 0; font-size: 17px; font-weight: 650; color: var(--text); }
+.settings-page-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.settings-page-icon { flex: none; width: 36px; height: 36px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; color: var(--neon); background: rgba(var(--neon-rgb), 0.1); border: 1px solid rgba(var(--neon-rgb), 0.22); }
+.settings-anchor { display: flex; flex-direction: column; gap: 14px; scroll-margin-top: 8px; border-radius: 18px; transition: box-shadow 0.4s; }
+.settings-anchor:empty { display: none; }
+.settings-stack { display: flex; flex-direction: column; gap: 14px; }
+.settings-anchor.found { box-shadow: 0 0 0 2px rgba(var(--neon-rgb), 0.75), 0 0 26px rgba(var(--neon-rgb), 0.35); }
+.settings-card h4 { font: 650 13px var(--sans, inherit); }
+.settings-card .settings-intro { font-size: 12px; line-height: 1.5; }
+
+/* Switches instead of checkboxes, in Settings and the setup window */
+.settings input[type="checkbox"], .ob-window input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 32px; height: 19px; margin: 0;
+  border-radius: 10px; background: #2a2f35; border: 1px solid #343a41; cursor: pointer; transition: background 0.16s, border-color 0.16s;
+}
+.settings input[type="checkbox"]::after, .ob-window input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #c9d0d6; transition: transform 0.16s, background 0.16s;
+}
+.settings input[type="checkbox"]:checked, .ob-window input[type="checkbox"]:checked { background: rgba(var(--neon-rgb), 0.85); border-color: var(--neon); }
+.settings input[type="checkbox"]:checked::after, .ob-window input[type="checkbox"]:checked::after { transform: translateX(13px); background: #04110f; }
+.settings input[type="checkbox"]:disabled, .ob-window input[type="checkbox"]:disabled { opacity: 0.4; cursor: default; }
+.check-row { align-items: flex-start; gap: 10px; line-height: 1.45; }
+.check-row input[type="checkbox"] { margin-top: 1px; }
+.switch-list { display: flex; flex-direction: column; border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+.switch-row { justify-content: space-between; align-items: center; padding: 10px 12px; margin: 0; }
+.switch-row + .switch-row { border-top: 1px solid var(--line-soft); }
+.switch-text { display: flex; flex-direction: column; gap: 2px; }
+.switch-text strong { color: var(--text); font-weight: 600; font-size: 12.5px; }
+.switch-text small { color: var(--muted); font-size: 11.5px; }
+
+/* Setup → Notch: a picture of the open notch, and its switches */
+.ob-notch-preview { display: flex; justify-content: center; padding: 6px 0 4px; }
+.ob-notch-shape { width: 300px; background: #000; border: 1px solid #1d2125; border-top: 0; border-radius: 0 0 18px 18px; padding: 0 10px 10px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 6px; }
+.ob-notch-top { display: flex; align-items: center; height: 22px; }
+.ob-notch-side { flex: 1; display: flex; gap: 3px; color: #8d96a1; }
+.ob-notch-side.right { justify-content: flex-end; }
+.ob-notch-side span { width: 18px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; }
+.ob-notch-side span.on { color: var(--neon); background: rgba(var(--neon-rgb), 0.14); }
+.ob-notch-camera { width: 92px; height: 22px; }
+.ob-notch-card { display: flex; flex-direction: column; gap: 5px; padding: 8px 9px; border-radius: 9px; background: #111316; border: 1px solid #1c1f23; }
+.ob-notch-card i { display: block; height: 5px; border-radius: 3px; background: #2a2f35; }
+.ob-notch-main { border: 1px solid var(--line-soft); border-radius: 12px; }
+.ob-notch-full { border: 1px solid var(--line-soft); border-radius: 12px; margin-top: 8px; }
+.ob-window .switch-list { margin-top: 8px; }
