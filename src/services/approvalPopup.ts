@@ -6,6 +6,7 @@ import { useSettings } from "../store/settings";
 import { shortcutLabel } from "../lib/shortcuts";
 import type { ToolStep } from "../types";
 import { resolveApproval, usePendingApprovals } from "./approvals";
+import { answerQuestion, askingCount, isAsking } from "./questions";
 
 /**
  * Every waiting approval goes to the Vorssaint notch, the same way Claude Code's permission
@@ -111,7 +112,8 @@ function sync(): void {
   for (const item of pending) if (!onNotch.has(item.approvalId) && !inPopup.has(item.approvalId)) toNotch(item);
   for (const id of [...onNotch]) if (!ids.has(id)) (onNotch.delete(id), void notchWithdraw(id).catch(() => {}));
   for (const id of [...inPopup]) if (!ids.has(id)) inPopup.delete(id);
-  void approvalKeysActive(pending.length > 0).catch(() => {});
+  syncQuestions();
+  void approvalKeysActive(pending.length > 0 || questionsOnNotch().length > 0).catch(() => {});
   // While you're in E.V the chat's own card is right there; the popup is for when you're elsewhere.
   const list = document.hasFocus() ? [] : pending.filter((p) => inPopup.has(p.approvalId));
   const key = JSON.stringify(list);
@@ -120,6 +122,84 @@ function sync(): void {
   void emitTo("approve", "approval-items", list).catch(() => {});
   const lines = list.reduce((n, item) => n + Math.min(item.titles.length, 3) - 1, 0);
   void approvalPopup(list.length > 0, PADDING + list.length * ROW_HEIGHT + lines * 18).catch(() => {});
+}
+
+/**
+ * Questions E.V asks while it works (ask_user cards: "Turn it on?", "Which one?") go to the notch
+ * too, like approvals — answered there, in the chat, by voice or with the approval keys, and gone
+ * everywhere once answered.
+ */
+interface WaitingQuestion {
+  id: string;
+  chatTitle: string;
+  question: NonNullable<ToolStep["question"]>;
+}
+
+function questionsOnNotch(): WaitingQuestion[] {
+  return useChats.getState().chats.flatMap((chat) =>
+    chat.messages.flatMap((m) =>
+      (m.blocks ?? []).flatMap((b) =>
+        b.type === "tool" && b.step.status === "pending" && b.step.question && isAsking(b.step.id) ? [{ id: b.step.id, chatTitle: chat.title, question: b.step.question }] : [],
+      ),
+    ),
+  );
+}
+
+const questionsSent = new Set<string>();
+
+/** The notch's reply: "answer:" + the chosen labels (E.V notch: a list; Vorssaint: question → labels). */
+function labelsFrom(reply: string): string[] | null {
+  if (!reply.startsWith("answer:")) return null;
+  try {
+    const value = JSON.parse(reply.slice(7)) as unknown;
+    const raw = Array.isArray(value) ? value : value && typeof value === "object" ? Object.values(value as Record<string, unknown>) : [];
+    const labels = raw.flatMap((v) => (Array.isArray(v) ? v : String(v).split(", "))).map(String).filter(Boolean);
+    return labels.length ? labels : null;
+  } catch {
+    return null;
+  }
+}
+
+function syncQuestions(): void {
+  const waiting = questionsOnNotch();
+  const ids = new Set(waiting.map((q) => q.id));
+  for (const q of waiting) {
+    if (questionsSent.has(q.id)) continue;
+    questionsSent.add(q.id);
+    const keys = useSettings.getState().settings.approvalKeys;
+    void notchRequest(q.id, {
+      id: q.id,
+      kind: "question",
+      tool: "E.V",
+      title: q.question.question,
+      subtitle: q.chatTitle,
+      project: `E.V · ${q.chatTitle}`,
+      keysHint: `${shortcutLabel(keys.approve)} ${q.question.options[0]?.label.replace(/\s*\(Recommended\)/i, "") ?? "first"} · ${shortcutLabel(keys.cancel)} not now`,
+      questions: [{ question: q.question.question, header: "E.V", options: q.question.options, multiSelect: q.question.multi }],
+      terminal: { deskSession: `ev-${q.id}` },
+    })
+      .then((reply) => {
+        if (!isAsking(q.id)) return;
+        const labels = labelsFrom(reply);
+        if (labels) answerQuestion(q.id, labels);
+        else if (reply === "deny") answerQuestion(q.id, null);
+      })
+      .catch(() => {});
+  }
+  for (const id of [...questionsSent]) if (!ids.has(id)) (questionsSent.delete(id), void notchWithdraw(id).catch(() => {}));
+}
+
+/** The approval keys on a question: approve = the first (recommended) choice, cancel = "Not now" or skip. */
+function answerByKey(key: "approve" | "always" | "deny"): boolean {
+  const q = questionsOnNotch()[0];
+  if (!q || key === "always") return Boolean(q);
+  const options = q.question.options.map((o) => o.label);
+  if (key === "approve") answerQuestion(q.id, options.slice(0, 1));
+  else {
+    const no = options.find((o) => /\b(not now|no|skip|cancel|don'?t|later)\b/i.test(o));
+    answerQuestion(q.id, no ? [no] : null);
+  }
+  return true;
 }
 
 function answer({ approvalId, answer }: PopupAnswer): void {
@@ -136,7 +216,7 @@ export function startApprovalPopup(): void {
   window.addEventListener("blur", sync);
   // Card titles arrive with the chat; keep the popup's text in step.
   useChats.subscribe((state, previous) => {
-    if (state.chats !== previous.chats && usePendingApprovals.getState().list.length) sync();
+    if (state.chats !== previous.chats && (usePendingApprovals.getState().list.length || askingCount() || questionsSent.size)) sync();
   });
   const keys = () => {
     const { approve, always, cancel } = useSettings.getState().settings.approvalKeys;
@@ -156,6 +236,7 @@ export function startApprovalPopup(): void {
   void listen<"approve" | "always" | "deny">("approval-key", (event) => {
     const first = usePendingApprovals.getState().list[0];
     if (first) answer({ approvalId: first.approvalId, answer: event.payload });
+    else answerByKey(event.payload);
   }).catch(() => {});
   // The popup's page loads after the first approval shows it: send it the list again.
   void listen("approval-popup-ready", () => {

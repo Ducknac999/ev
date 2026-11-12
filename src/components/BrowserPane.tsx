@@ -39,7 +39,7 @@ const host = (url: string) => {
 };
 
 /**
- * E.V's Browser panel: the E.V Browser (its own hidden Vivaldi) shown live. You browse it
+ * E.V's Browser panel: the E.V Browser (its own hidden browser) shown live. You browse it
  * like any browser. Tabs you open are private — the AI can't see them — until you share one; tabs
  * the AI opened are marked as E.V's, so you can watch what it did.
  */
@@ -227,7 +227,7 @@ export function BrowserPane({ chat, index, focused, variant }: { chat: Chat; ind
           <h2 className="pane-title">
             <Icon name="globe" size={13} /> E.V Browser
           </h2>
-          <span className="browser-note">E.V's own browser and account — never your Vivaldi</span>
+          <span className="browser-note">E.V's own browser and account — never yours</span>
           <ChatControls chat={chat} focusAction={variant === "card" ? "expand" : "dock"} />
         </div>
         {!chat.collapsed && (

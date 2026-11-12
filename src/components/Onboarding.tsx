@@ -1,3 +1,4 @@
+import { BrowsersSettings } from "./BrowsersSettings";
 import { Component, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   macDefaultBrowser,
@@ -27,7 +28,7 @@ import { VoiceEngineSettings } from "./VoiceEngineSettings";
  * and done later in Settings; nothing here is required to start using E.V.
  */
 
-const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Notch", "Done"] as const;
+const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Notch", "Browser", "Done"] as const;
 
 const KEY_PROVIDERS: KeyedProviderId[] = ["deepseek", "openai", "anthropic", "gemini", "openrouter", "xai", "mistral", "groq"];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -488,6 +489,20 @@ function NotchPreview() {
   );
 }
 
+function BrowserStep() {
+  return (
+    <>
+      <h2>Your browser</h2>
+      <p className="ob-lead">
+        Pick the browser you use, so E.V knows where your tabs are. For the fastest work in web pages, turn on fast control (or add the E.V extension) for it — E.V can
+        also ask the first time it needs to. You can change all of this in Settings → Browsers.
+      </p>
+      <BrowsersSettings compact />
+      <SkipNote />
+    </>
+  );
+}
+
 function NotchStep() {
   const settings = useSettings((s) => s.settings);
   const update = (fn: (d: Settings) => void) => void change(fn);
@@ -629,7 +644,8 @@ export function Onboarding() {
               {step === 4 && <PermissionsStep />}
               {step === 5 && <VoiceStep />}
               {step === 6 && <NotchStep />}
-              {step === 7 && <DoneStep />}
+              {step === 7 && <BrowserStep />}
+              {step === 8 && <DoneStep />}
               </StepGuard>
             </section>
             <footer className="ob-foot">

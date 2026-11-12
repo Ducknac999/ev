@@ -4,7 +4,7 @@ import { clipConfigure, lyricsClear, notchEnable, notchMainVisible, notchOpenMai
 import { useChats } from "../store/chats";
 import { useSettings } from "../store/settings";
 import { useVoice } from "../store/voice";
-import type { Chat, Settings } from "../types";
+import type { Chat, ChatMessage, Settings } from "../types";
 import { typedReply } from "./announce";
 import { isRunning, sendMessage, stopGeneration } from "./chatRunner";
 import { openPicked } from "./filePicker";
@@ -43,6 +43,16 @@ export type NotchRequest =
   | { kind: "openMain" }
   | { kind: "stop" }
   | { kind: "pickFile"; key: string; path: string };
+
+/** A reply still in the works, in words: the question waiting on you, or the step running now. */
+function whatsHappening(m: ChatMessage): string {
+  const steps = (m.blocks ?? []).flatMap((b) => (b.type === "tool" ? [b.step] : []));
+  const asking = steps.find((s) => s.status === "pending" && s.question);
+  if (asking?.question) return `Waiting for your answer: ${asking.question.question}`;
+  if (steps.some((s) => s.status === "pending" && s.needsApproval)) return "Waiting for your OK…";
+  const running = [...steps].reverse().find((s) => s.status === "running");
+  return running ? `${running.title}…` : "";
+}
 
 function aiChats(): Chat[] {
   return useChats.getState().chats.filter((c) => c.kind === "ai");
@@ -84,7 +94,7 @@ function snapshot(): NotchState {
       messages: chat.messages
         .filter((m) => !m.divider && (m.content || m.pending))
         .slice(-6)
-        .map((m) => ({ id: m.id, role: m.role, content: m.content.slice(-1200), ...(m.pending ? { pending: true } : {}) })),
+        .map((m) => ({ id: m.id, role: m.role, content: (m.content || (m.pending ? whatsHappening(m) : "")).slice(-1200), ...(m.pending ? { pending: true } : {}) })),
     },
     chatPanels: settings.notch.chatPanels,
     lyrics: settings.notch.lyrics,

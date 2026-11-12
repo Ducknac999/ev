@@ -145,6 +145,10 @@ export interface ChatMessage {
   voiceNote?: string;
   /** Tokens this answer used (all its steps), as the provider counted them. */
   usage?: { input: number; cached: number; output: number; steps: number };
+  /** While E.V works: where it is in the job ("Step 3 of 5 · Setting colors"). */
+  progress?: { label: string; done: number; total: number; startedAt: number };
+  /** How long the whole answer took, in milliseconds. */
+  took?: number;
   /** Sent to the model with this message but not shown (e.g. SUMMARY.md after /clear). */
   hiddenContext?: string;
   /** Done by E.V itself with no AI call (instant commands like "pause the music"). */
@@ -242,6 +246,27 @@ export interface TerminalPreset {
   name: string;
   command: string;
   cwd?: string;
+}
+
+/** What E.V has learned about one browser (Settings → Browsers). */
+export interface KnownBrowser {
+  /** blink · webkit · gecko · goanna · libweb · servo · unknown */
+  engine: string;
+  /** script · extension · accessibility: the fastest way E.V found to work in its pages. */
+  route: string;
+  /** "Allow JavaScript from Apple Events": on, off, or the user said not now. */
+  switch?: "on" | "off" | "declined";
+  /** The E.V extension has connected from this browser before. */
+  extension?: boolean;
+  checkedAt: number;
+}
+
+export interface BrowserMemory {
+  /** The browser the user uses (named, picked or found by E.V). Null until E.V knows. */
+  preferred: string | null;
+  /** Browsers the user said they stopped using ("I stopped using Brave"). */
+  notUsing: string[];
+  known: Record<string, KnownBrowser>;
 }
 
 export interface Settings {
@@ -347,6 +372,8 @@ export interface Settings {
   };
   /** Quitting: ⌘Q keeps the notch (clipboard, dictation, music, ☕) running; E.V opens at login. */
   background: { keepNotchOnQuit: boolean; openAtLogin: boolean };
+  /** The user's browsers: E.V's lifetime memory of which one they use and how it can drive each. */
+  browsers: BrowserMemory;
   /** DeepSeek spending: a daily limit in the account's currency (0 = no limit). */
   spending: { dailyLimit: number };
   /** A screen question needs a picture but the chat's model can't see pictures: ask, use Flash · Vision for that look, or read the screen as text. */

@@ -18,6 +18,7 @@ export type Page =
   | "notch"
   | "approvals"
   | "connections"
+  | "browsers"
   | "instant"
   | "schedule"
   | "activity"
@@ -60,6 +61,7 @@ export const GROUPS: { label: string; pages: PageInfo[] }[] = [
     pages: [
       { id: "approvals", label: "Approvals & safety", icon: "shield", blurb: "What E.V may do on its own, what it asks first, and your passphrase." },
       { id: "connections", label: "Connections", icon: "link", blurb: "Gmail, Calendar, Notes, Reminders and more, and E.V's own browser." },
+      { id: "browsers", label: "Browsers", icon: "globe", blurb: "Which browser is yours, and how fast E.V can work in each one." },
       { id: "instant", label: "Instant actions", icon: "bolt", blurb: "Simple requests done on this Mac right away, with no AI." },
     ],
   },
@@ -133,7 +135,10 @@ export const ENTRIES: SettingEntry[] = [
   { title: "Apps the clipboard skips", page: "notch", anchor: "clipboard", words: "password manager ignore exclude private 1password" },
   { title: "Approvals: what E.V may do", page: "approvals", anchor: "approvals", words: "permission allow ask approve safety restrictions risky level trust control" },
   { title: "Passphrase (spoken approval)", page: "approvals", anchor: "passphrase", words: "passphrase password voice approval secret phrase lock" },
-  { title: "E.V Browser", page: "connections", anchor: "browser", words: "browser vivaldi web headless internet" },
+  { title: "E.V Browser", page: "connections", anchor: "browser", words: "browser hidden own account web headless internet chromium" },
+  { title: "Your browsers", page: "browsers", anchor: "browsers", words: "browser chrome brave safari firefox arc edge ardia vivaldi default which browser engine chromium webkit gecko" },
+  { title: "Fast control in your browser", page: "browsers", anchor: "browsers", words: "allow javascript apple events fast speed pages websites switch turn on" },
+  { title: "E.V extension", page: "browsers", anchor: "browsers", words: "extension add on firefox install load unpacked developer mode" },
   { title: "Connections (Gmail, Calendar, Notes…)", page: "connections", anchor: "connections", words: "gmail email mail calendar notes reminders youtube google connect accounts integrations apps" },
   { title: "Instant actions", page: "instant", anchor: "instant", words: "instant router apple intelligence on device no ai tokens fast free" },
   { title: "Schedule", page: "schedule", anchor: "schedule", words: "schedule reminders recurring repeat later timer alarm every day" },

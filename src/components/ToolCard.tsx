@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useContext, useState } from "react";
 import { macRequestPermission, macSystem } from "../lib/ipc";
 import { resolveApproval } from "../services/approvals";
 import { answerQuestion } from "../services/questions";
@@ -9,6 +9,7 @@ import { useVault } from "../store/vault";
 import type { PlanStepStatus, ReviewFile, ToolPreview, ToolStep } from "../types";
 import { GraphCard } from "./GraphCard";
 import { Icon, type IconName } from "./Icon";
+import { WaitingForYou } from "./waitingForYou";
 
 const ICONS: Record<string, IconName> = {
   read_file: "file",
@@ -59,6 +60,12 @@ const ICONS: Record<string, IconName> = {
   ask_user: "alert",
   agent: "spark",
 };
+
+/** A running step paused on the user's answer says so, instead of "Running…". */
+function useStatusLabel(step: ToolStep): string {
+  const waiting = useContext(WaitingForYou);
+  return waiting && step.status === "running" ? "Waiting for you" : STATUS_LABEL[step.status];
+}
 
 const STATUS_LABEL: Record<ToolStep["status"], string> = {
   queued: "Queued",
@@ -483,6 +490,7 @@ function autoTitle(step: ToolStep): string {
  * actions approved together share one decision, shown on the last card of the group.
  */
 export const ToolCard = memo(function ToolCard({ step }: { step: ToolStep }) {
+  const statusLabel = useStatusLabel(step);
   const [showResult, setShowResult] = useState(false);
   const pending = step.status === "pending";
   const internal = !step.needsApproval && !step.auto;
@@ -536,7 +544,7 @@ export const ToolCard = memo(function ToolCard({ step }: { step: ToolStep }) {
             {command && <code>{command}</code>}
           </span>
           {step.alwaysApproved && <span className="tool-voice">Always approved</span>}
-          {step.status !== "done" && <span className={`tool-status status-${step.status}`}>{STATUS_LABEL[step.status]}</span>}
+          {step.status !== "done" && <span className={`tool-status status-${step.status}`}>{statusLabel}</span>}
           {step.result && !step.result.startsWith("PERMISSION:") && (step.status === "done" || step.status === "error") && (
             <button className="tool-result-toggle inline" onClick={() => setShowResult((s) => !s)} aria-expanded={showResult} title={showResult ? "Hide what it returned" : "Show what it returned"}>
               <Icon name={showResult ? "chevronUp" : "chevron"} size={11} />
@@ -556,7 +564,7 @@ export const ToolCard = memo(function ToolCard({ step }: { step: ToolStep }) {
         <span className="tool-title">{step.title}</span>
         {step.alwaysApproved && <span className="tool-voice">Always approved</span>}
         {step.approvedByVoice && !step.alwaysApproved && step.status !== "pending" && <span className="tool-voice">Approved by voice</span>}
-        <span className={`tool-status status-${step.status}`}>{STATUS_LABEL[step.status]}</span>
+        <span className={`tool-status status-${step.status}`}>{statusLabel}</span>
       </div>
       {step.outside && (
         <div className="tool-warning">

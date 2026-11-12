@@ -103,7 +103,14 @@ export async function textOnlyMessages(
   for (const m of history) {
     const provider = m.transcript?.provider;
     if (m.role === "assistant" && (provider === "groq" || provider === "deepseek") && m.transcript!.items.length) {
-      out.push(...(slimOpenAiItems(m.transcript!.items) as ChatCompletionMessage[]));
+      const items = slimOpenAiItems(m.transcript!.items) as ChatCompletionMessage[];
+      // E.V's own record of what the turn did goes with its final words, so a wrong earlier claim
+      // ("I can't change pages there") never outweighs steps that worked.
+      const last = items.at(-1);
+      if (last && last.role === "assistant" && !last.tool_calls && m.blocks?.some((b) => b.type === "tool")) {
+        items[items.length - 1] = { ...last, content: `${typeof last.content === "string" ? last.content : ""}\n\n${actionRecord(m)}`.trim() };
+      }
+      out.push(...items);
       continue;
     }
     const blocks: string[] = [];
@@ -136,6 +143,13 @@ export async function textOnlyMessages(
 }
 
 /** Plain-text record of actions from a turn another provider ran, so a switched model knows. */
+/** What a turn really did, step by step with results, for later turns to rely on. */
+function actionRecord(m: ChatMessage): string {
+  const steps = (m.blocks ?? []).flatMap((b) => (b.type === "tool" ? [b.step] : [])).slice(-40);
+  const mark = (status: string) => (status === "done" ? "✓" : status === "denied" || status === "error" ? "✗" : "…");
+  return `[E.V's record of this turn: ${steps.map((s) => `${mark(s.status)} ${s.title}${s.result ? ` — ${String(s.result).slice(0, 80)}` : ""}`).join("; ")}]`;
+}
+
 export function actionSummary(m: ChatMessage): string {
   const steps = (m.blocks ?? []).flatMap((b) => (b.type === "tool" ? [b.step] : []));
   return `[Actions taken: ${steps.map((s) => `${s.title} (${s.status})`).join("; ")}]`;

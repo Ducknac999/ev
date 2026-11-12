@@ -4,8 +4,8 @@ import { analyzeGraph, describeGraph, readGraphInput, type GraphResult } from ".
 import type { ToolDefinition } from "./tools";
 
 /**
- * The E.V Browser: E.V's own hidden copy of Vivaldi with its own logins (never the user's
- * Vivaldi). Pages come back as text — numbered controls plus the page's words — so most steps need
+ * The E.V Browser: E.V's own hidden copy of a Chromium browser on this Mac with its own logins
+ * (never the user's). Pages come back as text — numbered controls plus the page's words — so most steps need
  * no picture, and several steps go in one call.
  */
 
@@ -13,7 +13,7 @@ export const BROWSER_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "browser_go",
     description:
-      "Open a web page in the E.V Browser — your own hidden browser with its own Google account (not the user's Vivaldi). Returns the page as text: numbered controls (#id) and the page's words. Use it for anything on the web that needs clicking, typing, signing in or a real page; for just reading an article, web_fetch is lighter.",
+      "Open a web page in the E.V Browser — your own hidden browser with its own Google account (not the user's own browser). Returns the page as text: numbered controls (#id) and the page's words. Use it for anything on the web that needs clicking, typing, signing in or a real page; for just reading an article, web_fetch is lighter.",
     parameters: {
       type: "object",
       properties: {

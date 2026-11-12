@@ -9,7 +9,7 @@ import type { Chat, KeyedProviderId, PlanView, ReviewFile, ReviewView } from "..
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean) : []);
 
-/** App names the user mentioned ("open Discord", "in Vivaldi"), so looking at them needs no approval. */
+/** App names the user mentioned ("open Discord", "in Ardia"), so looking at them needs no approval. */
 export function appsNamedIn(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(/\b(?:[Oo]pen|[Ii]n|[Oo]n|[Uu]sing|[Ww]ith|[Ll]aunch|[Ss]tart|[Ii]nto)\s+([A-Z][\w.&+-]*(?:\s[A-Z][\w.&+-]*)?)/g)) out.add(m[1]);

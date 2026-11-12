@@ -7,6 +7,7 @@ import { Icon } from "./Icon";
 import { KeyPoolEditor } from "./KeyPoolEditor";
 import { VoiceEngineSettings } from "./VoiceEngineSettings";
 import { ConnectionsSettings } from "./ConnectionsSettings";
+import { BrowsersSettings } from "./BrowsersSettings";
 import { GideonBrowserSettings } from "./GideonBrowserSettings";
 import { ClaudePlanUsage } from "./ClaudePlanUsage";
 import { SpendingSettings } from "./SpendingSettings";
@@ -19,9 +20,9 @@ import {
   NotchFeaturesSettings,
   NotchSettings,
 } from "./NotchSettings";
+import { MoveInCard } from "./MoveInCard";
 import { GROUPS, pageInfo, searchSettings, type Page, type SettingEntry } from "./settingsSearch";
 import { UpdateSettings } from "./UpdateSettings";
-import { MoveInCard } from "./MoveInCard";
 import {
   ActivitySettings,
   ApprovalKeysSettings,
@@ -527,6 +528,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <GideonBrowserSettings />
               </Anchor>
             </>
+          )}
+          {tab === "browsers" && (
+            <Anchor id="browsers">
+              <BrowsersSettings />
+            </Anchor>
           )}
           {tab === "instant" && (
             <Anchor id="instant">

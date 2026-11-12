@@ -39,26 +39,28 @@ pub async fn notch_request(id: String, request: serde_json::Value) -> Result<Str
     let mut reader = BufReader::new(read);
     let mut reply = String::new();
     // The write half stays open while waiting: shutting it down reads as "gone" to the notch.
-    let outcome = tokio::select! {
+    let outcome: String = tokio::select! {
         read = reader.read_line(&mut reply) => match read {
             Ok(n) if n > 0 => {
                 let value: serde_json::Value = serde_json::from_str(reply.trim()).unwrap_or_default();
                 match value.get("decision").and_then(|d| d.as_str()) {
-                    Some("allow") if value.get("always").and_then(|a| a.as_bool()) == Some(true) => "always",
-                    Some("allow") => "allow",
-                    Some("deny") => "deny",
-                    _ => "defer",
+                    Some("allow") if value.get("always").and_then(|a| a.as_bool()) == Some(true) => "always".into(),
+                    Some("allow") => "allow".into(),
+                    Some("deny") => "deny".into(),
+                    // A question's choices: "answer:" + {question: "label, label"}.
+                    Some("answer") => format!("answer:{}", value.get("answers").cloned().unwrap_or_default()),
+                    _ => "defer".into(),
                 }
             }
-            _ => "closed",
+            _ => "closed".into(),
         },
-        _ = rx => "withdrawn",
+        _ = rx => "withdrawn".into(),
     };
     drop(write);
     if let Some(map) = WAITING.lock().unwrap().as_mut() {
         map.remove(&id);
     }
-    Ok(outcome.into())
+    Ok(outcome)
 }
 
 /// Approvals on the E.V notch, waiting for Approve / Always / Skip.

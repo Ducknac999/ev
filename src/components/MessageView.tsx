@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useContext, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -16,6 +16,7 @@ import { ToolCard } from "./ToolCard";
 import { CodeBlock } from "./CodeBlock";
 import { Icon } from "./Icon";
 import { ProviderDot } from "./ModelPicker";
+import { WaitingForYou, waitsForYou } from "./waitingForYou";
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 // Maths written as $…$ / $$…$$ shows as real notation; bad LaTeX falls back to its source text.
@@ -136,6 +137,7 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
               · {shortCount(message.usage.input + message.usage.output)} tokens{message.usage.input ? ` · ${Math.round((message.usage.cached / message.usage.input) * 100)}% cached` : ""}
             </span>
           )}
+          {!message.pending && message.took ? <span className="msg-key" title="How long this answer took, start to finish"> · {clock(message.took)}</span> : null}
         </div>
       )}
       {message.reasoning && (
@@ -144,7 +146,10 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
           <div className="msg-thinking-body">{message.reasoning}</div>
         </details>
       )}
-      {message.blocks ? <Blocks blocks={message.blocks} /> : message.content && <Markdown text={message.content} />}
+      <WaitingForYou.Provider value={Boolean(message.pending) && waitsForYou(message.blocks)}>
+        {message.blocks ? <Blocks blocks={message.blocks} /> : message.content && <Markdown text={message.content} />}
+        {message.pending && message.progress && <TaskProgress progress={message.progress} />}
+      </WaitingForYou.Provider>
       {message.checking && (
         <div className="fact-check checking" role="status">
           <span className="spinner small" /> Checking facts against sources…
@@ -210,16 +215,52 @@ function Blocks({ blocks }: { blocks: MessageBlock[] }) {
   return <>{out}</>;
 }
 
+/** "0:42", "12:05". */
+function clock(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** Where E.V is in a job while it works: the step, how many there are, and the time so far. */
+function TaskProgress({ progress }: { progress: NonNullable<ChatMessage["progress"]> }) {
+  const waiting = useContext(WaitingForYou);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const share = progress.total > 0 ? Math.min(1, progress.done / progress.total) : 0;
+  return (
+    <div className={`task-progress${waiting ? " waiting" : ""}`} role="status" aria-live="polite">
+      <div className="task-progress-line">
+        {waiting ? <Icon name="alert" size={12} /> : <span className="spinner small" />}
+        <span className="task-progress-text">
+          {waiting
+            ? "Waiting for you — answer the question above (or in the notch)"
+            : `${progress.total > 0 ? `Step ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : `Step ${progress.done + 1}`}${progress.label ? ` · ${progress.label}` : ""}`}
+        </span>
+        <span className="task-progress-time">{clock(now - progress.startedAt)}</span>
+      </div>
+      {progress.total > 0 && (
+        <div className="task-progress-bar" aria-hidden="true">
+          <span style={{ width: `${Math.round(share * 100)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StepGroup({ steps }: { steps: ToolStep[] }) {
+  const waiting = useContext(WaitingForYou);
   const [open, setOpen] = useState(false);
   const working = steps.find((s) => s.status === "running" || s.status === "queued");
   const failed = steps.filter((s) => s.status === "error" || s.status === "denied").length;
   return (
     <div className={`step-group${open ? " open" : ""}`}>
       <button className="step-group-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        {working ? <span className="spinner small" /> : <Icon name="check" size={12} />}
+        {working && !waiting ? <span className="spinner small" /> : <Icon name={working ? "alert" : "check"} size={12} />}
         <span className="step-group-text">
-          {working ? working.title : `${steps.length} steps`}
+          {working ? `${working.title}${waiting ? " · waiting for you" : ""}` : `${steps.length} steps`}
           {failed > 0 && <span className="step-group-failed"> · {failed} didn't work</span>}
         </span>
         <Icon name={open ? "chevronUp" : "chevron"} size={11} />

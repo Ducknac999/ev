@@ -24,7 +24,9 @@ export function slimResult(text: string): string {
   if (isLook(text)) {
     const head = text.split("\n").find((line) => line.trim() && !/^(?:Controls|Changed|Window now)\b/.test(line)) ?? "";
     const change = /\bnothing changed\b/i.test(text) ? " Nothing changed." : "";
-    return `${clip(head, LOOK_LIMIT)}${change} [old control list left out — look again for current numbers]`;
+    // A page batch keeps what it did (the list of what changed is what goes).
+    const did = text.split("\n").find((line) => /^(Done \(|Stopped at )/.test(line));
+    return `${clip(head, LOOK_LIMIT)}${did ? ` ${clip(did, RESULT_LIMIT)}` : ""}${change} [old control list left out — look again for current numbers]`;
   }
   return clip(text, RESULT_LIMIT);
 }
@@ -78,11 +80,11 @@ export function slimGeminiItems(items: unknown[]): unknown[] {
   });
 }
 
-/** "Brave Browser — window …" → "Brave Browser" (null if it isn't a window look). */
+/** "Brave Browser — window …" → "Brave Browser"; a page look → "Ardia (page)" (null if it isn't a full look). */
 function lookApp(text: string): string | null {
   if (!/\nControls:\n/.test(text)) return null;
-  const m = /^(.+?) — window "/.exec(text);
-  return m ? m[1] : null;
+  const m = /^(.+?) — (window|page) "/.exec(text);
+  return m ? (m[2] === "page" ? `${m[1]} (page)` : m[1]) : null;
 }
 
 /**
@@ -119,6 +121,39 @@ export function supersedeLooks(provider: string, items: unknown[]): unknown[] {
     if (!app) continue;
     if (!seen.has(app)) seen.add(app);
     else out[i] = { ...item, content: slimResult(item.content) };
+  }
+  return out;
+}
+
+/**
+ * Long jobs: control lists and batch reports from many steps ago are out of date and only make
+ * every later call bigger. Every so often (not every step, so the provider's cache still covers
+ * most of the conversation) all but the newest `keep` of them shrink to one line. Results that
+ * aren't window or page lists (a video's facts, a file, a search) stay whole.
+ */
+export function slimOldLooks(provider: string, items: unknown[], keep: number): unknown[] {
+  const out = [...items];
+  let seen = 0;
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (provider === "gemini") {
+      const item = out[i] as GeminiItem;
+      if (!Array.isArray(item?.parts)) continue;
+      let changed = false;
+      const parts = item.parts.map((p) => {
+        const fr = p.functionResponse as { response?: { result?: unknown } } | undefined;
+        const text = typeof fr?.response?.result === "string" ? fr.response.result : null;
+        if (!text || !isLook(text) || text.length < 400) return p;
+        if (++seen <= keep) return p;
+        changed = true;
+        return { ...p, functionResponse: { ...fr, response: { ...fr!.response, result: slimResult(text) } } };
+      });
+      if (changed) out[i] = { ...item, parts };
+      continue;
+    }
+    const item = out[i] as OpenAiItem;
+    if (item?.role !== "tool" || typeof item.content !== "string" || !isLook(item.content) || item.content.length < 400) continue;
+    if (++seen <= keep) continue;
+    out[i] = { ...item, content: slimResult(item.content) };
   }
   return out;
 }

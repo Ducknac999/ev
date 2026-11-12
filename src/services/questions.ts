@@ -27,3 +27,8 @@ export function answerQuestion(id: string, answer: string[] | null): void {
 export function isAsking(id: string): boolean {
   return waiting.has(id);
 }
+
+/** How many questions are waiting for an answer right now. */
+export function askingCount(): number {
+  return waiting.size;
+}

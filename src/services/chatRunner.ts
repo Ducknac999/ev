@@ -21,7 +21,7 @@ import { useNotice } from "../store/notice";
 import { useSettings } from "../store/settings";
 import type { Attachment, Chat, ChatMessage, KeyedProviderId, ModelRef, ToolStep } from "../types";
 import { closeApprovalWindow, requestApproval } from "./approvals";
-import { macDefaultBrowser, macFront, macLook, macTabs, macUserIdle, toolReadDocument, workspaceClone } from "../lib/ipc";
+import { browsersSetPreferred, macFront, macLook, macTabs, macUserIdle, toolReadDocument, workspaceClone } from "../lib/ipc";
 import { alwaysScope, categoryFor, decide, steadyText, type Category, type PlanScope, type PolicyContext } from "../providers/agent/policy";
 import { useVault, type ActivityEntry } from "../store/vault";
 import type { PlanStepStatus, PlanView } from "../types";
@@ -34,7 +34,9 @@ import { findLearned, isForgetRequest, replay, Trail } from "./learned";
 import { MAC_TOOLS } from "../providers/agent/macTools";
 import { announce, announceImportant, type AnnounceMode } from "./announce";
 import { requestKind } from "./requestKind";
-import { supersedeLooks } from "../providers/slimHistory";
+import { slimOldLooks, supersedeLooks } from "../providers/slimHistory";
+import { browserPromptLine, learnFromMessage, memory as browserMemory } from "./browsers";
+import { userTurn as providerUserTurn } from "../providers/agent/verify";
 import { nameChat } from "./chatNames";
 import { sharedTabsPrompt } from "../providers/agent/browserTools";
 import { AGENT_TOOL, ASK_TOOL, documentScript, isDocumentPath, parseQuestion } from "../providers/agent/workTools";
@@ -55,7 +57,7 @@ const SCREEN_PAUSE_S = 3;
 const SCREEN_PATIENCE_MS = 60_000;
 
 /** Working inside apps step by step needs the stronger model too. */
-const STEERING_TOOLS = new Set(["mac_look", "mac_tabs", "mac_click", "mac_drag", "mac_menu", "mac_type", "mac_key", "mac_do", "mac_screen", "mac_applescript", "propose_plan", "browser_go", "browser_do", "browser_look"]);
+const STEERING_TOOLS = new Set(["page_look", "page_do", "mac_look", "mac_tabs", "mac_click", "mac_drag", "mac_menu", "mac_type", "mac_key", "mac_do", "mac_screen", "mac_applescript", "propose_plan", "browser_go", "browser_do", "browser_look"]);
 
 /** Longest the fact-check may take before the answer is shown unchecked. */
 const FACT_CHECK_MS = 45_000;
@@ -190,15 +192,30 @@ const QUICK_ACTIONS = new Set(["mac_media", "mac_system"]);
  * for, shows an approval card, waits for the user, runs it, and feeds the result back — until
  * the model answers without asking for more. Lives outside React so background chats keep going.
  */
-let defaultBrowser: { name: string; at: number } | null = null;
-
-/** The user's default browser, checked at most once a minute (it can change in System Settings). */
-async function userBrowser(): Promise<string> {
-  if (defaultBrowser && Date.now() - defaultBrowser.at < 60_000) return defaultBrowser.name;
-  const name = await macDefaultBrowser().catch(() => defaultBrowser?.name ?? "Safari");
-  defaultBrowser = { name, at: Date.now() };
-  return name;
+/** The user's browser for the instructions: what they named or picked (lifetime memory), else the Mac's default. */
+async function userBrowser(content: string): Promise<{ name: string; known: boolean; others: string[] }> {
+  // "I'm using Ardia, I stopped using Brave" is remembered for every chat before anything else runs.
+  await learnFromMessage(content).catch(() => null);
+  void browsersSetPreferred(browserMemory().preferred).catch(() => {});
+  return browserPromptLine().catch(() => ({ name: "Safari", known: false, others: [] }));
 }
+
+/** Each provider's quicker model, for steps that only carry out what's already planned. */
+const FAST_STEP: Partial<Record<KeyedProviderId, (model: string) => string | null>> = {
+  deepseek: (m) => (m === "deepseek-v4-pro" ? "deepseek-flash" : null),
+  gemini: (m) => (/pro/i.test(m) ? GEMINI_FLASH.model : null),
+  openai: (m) => (/^gpt-5(?!.*(mini|nano))/i.test(m) ? "gpt-5-mini" : null),
+  anthropic: (m) => (/opus|sonnet/i.test(m) ? "claude-haiku-5-5" : null),
+  mistral: (m) => (/large/i.test(m) ? "mistral-small-latest" : null),
+};
+/** A stronger model for a step that's stuck (same key), used for at most a few steps. */
+const STRONG_STEP: Partial<Record<KeyedProviderId, (model: string) => string | null>> = {
+  deepseek: (m) => (m.startsWith("deepseek-flash") ? "deepseek-v4-pro" : null),
+};
+const STRONG_STEPS_MAX = 3;
+/** Older window and page lists shrink every this many steps (see slimOldLooks). */
+const SLIM_EVERY = 8;
+const SLIM_KEEP = 4;
 
 /** A chat whose provider has no keys at all (e.g. after they were all removed) moves to one that has keys. */
 function moveOffKeylessProvider(chatId: string): void {
@@ -218,7 +235,7 @@ const SCREEN_READER =
 
 /** Tools that take a picture (of the screen, an app or a page). */
 function wantsPicture(name: string, args: Record<string, unknown>): boolean {
-  return name === "mac_screen" || ((name === "mac_look" || name === "browser_look") && args.picture === true);
+  return name === "mac_screen" || name === "video_frames" || ((name === "mac_look" || name === "browser_look") && args.picture === true);
 }
 
 /**
@@ -226,7 +243,7 @@ function wantsPicture(name: string, args: Record<string, unknown>): boolean {
  * switch the chat to Flash · Vision ("switch"), or read the screen as text ("text"). Asks in the
  * chat (and the quick panel) unless Settings → Models says what to do.
  */
-async function howToSee(chatId: string, replyId: string, model: string, signal: AbortSignal): Promise<"once" | "switch" | "text"> {
+async function howToSee(chatId: string, replyId: string, model: string, signal: AbortSignal, what = "a picture of your screen"): Promise<"once" | "switch" | "text"> {
   const setting = useSettings.getState().settings.screenPicture;
   if (setting === "vision") return "once";
   if (setting === "text") return "text";
@@ -234,15 +251,15 @@ async function howToSee(chatId: string, replyId: string, model: string, signal: 
     id: uid("step-"),
     name: ASK_TOOL,
     args: {},
-    title: "Needs a picture of your screen",
+    title: `Needs ${what}`,
     needsApproval: false,
     status: "pending",
     question: {
-      question: `This needs a picture of your screen, but ${model} can't see pictures. How should E.V look?`,
+      question: `This needs ${what}, but ${model} can't see pictures. How should E.V look?`,
       options: [
         { label: "Use Vision for this look", description: "Only this look uses Flash · Vision (extra tokens), then back to your model" },
         { label: "Switch chat to Vision", description: "This chat uses Flash · Vision from now on" },
-        { label: "Read as text instead", description: "Fewest tokens; can't see diagrams or images" },
+        { label: "Read as text instead", description: "Fewest tokens; can't see colors, diagrams or images" },
       ],
       multi: false,
     },
@@ -254,12 +271,70 @@ async function howToSee(chatId: string, replyId: string, model: string, signal: 
   return choice.startsWith("Use Vision") ? "once" : choice.startsWith("Switch") ? "switch" : "text";
 }
 
+/** What E.V knows it can do in a browser's pages (from Settings → Browsers), in words for the AI. */
+function browserAccess(name: string): string | undefined {
+  const known = useSettings.getState().settings.browsers?.known?.[name];
+  if (!known) return undefined;
+  if (known.route === "extension") return "page access is ON through the E.V extension — page_look / page_do read and change its pages directly.";
+  if (known.route === "script" && known.switch === "on")
+    return "page access is ON (“Allow JavaScript from Apple Events” is turned on) — page_look / page_do read and change its pages directly. You can do it; never say you can't read or change pages there.";
+  if (known.route === "script")
+    return "page access is OFF until “Allow JavaScript from Apple Events” is on — page_look offers to turn it on for the user with one click; use that, never send them to settings.";
+  return "pages can only be worked through the window (mac_look / mac_click), not page_look / page_do.";
+}
+
 /** Mac steps that change something, and the ones that only look. */
-const MAC_ACTS = new Set(["mac_click", "mac_do", "mac_drag", "mac_key", "mac_menu", "mac_type", "mac_scroll", "mac_open", "mac_applescript", "mac_tabs"]);
-const MAC_LOOKS = new Set(["mac_look", "mac_screen", "mac_front"]);
+const MAC_ACTS = new Set(["page_do", "mac_click", "mac_do", "mac_drag", "mac_key", "mac_menu", "mac_type", "mac_scroll", "mac_open", "mac_applescript", "mac_tabs", "browser_do", "browser_go"]);
+const MAC_LOOKS = new Set(["page_look", "mac_look", "mac_screen", "mac_front", "browser_look"]);
 
 /** Steps in a row with no visible change before E.V stops a task. */
 const STALL_LIMIT = 5;
+
+/*
+ * Rules every kind of work shares (browser, apps, calendar, anything added later): a reply never
+ * ends on a promise, a task never ends silently, a timeout is handled the same way everywhere, and
+ * an action that did nothing is never repeated a third time.
+ */
+/** Connection tools (c_<service>__<action>) that change things, and ones that read. */
+const CONNECTION_WRITE = /^c_\w+__\w*(?:create|add|update|insert|patch|edit|set|move|delete|remove|send|reply|schedule)/i;
+const CONNECTION_READ = /^c_\w+__\w*(?:get|list|search|read|find|query|fetch)/i;
+const NO_CHANGE = /no visible change|nothing changed|shows no change/i;
+const TIMED_OUT = /timed out|took too long|isn't answering|not responding/i;
+const PROMISE_ONLY = /\b(?:i'?ll|i will|i'?m going to|i am going to|let me(?! know)|going to|i'?m (?:starting|opening|checking|pulling|looking|getting)|starting (?:by|with)|first,? i)\b/i;
+
+/** A reply that only says what it's about to do ("I'll start by…", "Let me…") — with no action, nothing happened. */
+function onlyPromises(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 500 || /\?\s*$/.test(t)) return false;
+  if (/\b(?:let me know|if you(?:'d)? like|want me to|should i|shall i|would you like)\b/i.test(t)) return false;
+  const last = t.split(/(?<=[.!…:])\s+/).filter(Boolean).at(-1) ?? t;
+  return PROMISE_ONLY.test(last);
+}
+
+const TIMEOUT_ACT_NOTE =
+  "It timed out, so part of it may have happened. Don't resend the same batch: look first to see what's there now, then redo only what's missing, a few actions at a time.";
+const STUCK_NOTE =
+  "It didn't answer twice in a row. Most often a popup or dialog is open and waiting (in a browser: an alert or confirm box, which freezes the page). mac_look at the app's window (not page_look) to see it, and deal with it there — or tell the user exactly what it says.";
+const CIRCLE_NOTE =
+  "This exact action has now done nothing twice — it will not be run again. Stop repeating it: read the whole screen once (page_look / mac_look without find), find the control that really does what you want, and act on that, or tell the user what's in the way.";
+
+/** E.V's own account of a turn, from its step record, for when the model ends without one. */
+function stepReport(changes: string[], why: string): string {
+  const pick = (mark: string) => [...new Set(changes.filter((a) => a.startsWith(mark)).map((a) => a.slice(2).replace(/ \(not confirmed\)$/, "")))];
+  const list = (items: string[]) => items.slice(0, 8).map((i) => `- ${i}`).join("\n") + (items.length > 8 ? `\n- …and ${items.length - 8} more` : "");
+  const done = pick("✓");
+  const failed = pick("✗");
+  const unsure = pick("?");
+  return [
+    `_${why} From E.V's record of this task:_`,
+    done.length ? `**Done:**\n${list(done)}` : "",
+    failed.length ? `**Didn't work:**\n${list(failed)}` : "",
+    unsure.length ? `**Not confirmed — check these:**\n${list(unsure)}` : "",
+    'Say "continue" to pick up from here.',
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 /** An answer saying the thing wasn't found ("there's no Quote collection", "I couldn't find it"). */
 const NOT_FOUND = /\b(?:there(?:'s| is) no|there are no|couldn'?t find|can'?t find|could not find|cannot find|didn'?t find|don'?t see|do not see|isn'?t there|is not there|doesn'?t exist|does not exist|not found|no (?:such|matching)|wasn'?t (?:there|found)|isn'?t (?:listed|available))\b/i;
@@ -285,13 +360,19 @@ function guessedAddress(name: string, args: Record<string, unknown>, seen: strin
 }
 
 /** Words that lean on earlier messages ("do that again", "the same playlist", "like before"). */
-const REFERS_BACK = /\b(?:again|same|previous|last\s+(?:time|one|song|chat)|before|earlier|instead|undo|continue|keep\s+going|the\s+one|you\s+just|you\s+said|we\s+(?:did|talked|said)|as\s+(?:i|you)\s+said|that\s+(?:one|song|playlist|tab|file|folder|app|chat|thing)|those|them)\b/i;
+// "Same" and "before" only count when they point back at the chat ("the same one", "like before"),
+// not at something in the request itself ("the same settings as the video", "before 5pm").
+const REFERS_BACK = /\b(?:again|(?:the\s+)?same\s+(?:one|thing|song|way|again|as\s+(?:before|last|earlier|you|we))|do\s+the\s+same|previous|last\s+(?:time|one|song|chat)|(?:like|as)\s+before|(?:you|we)\s+(?:did|said|had)\s+(?:it\s+)?before|earlier|instead|undo|continue|keep\s+going|the\s+one|you\s+just|you\s+said|we\s+(?:did|talked|said)|as\s+(?:i|you)\s+said|that\s+(?:one|song|playlist|tab|file|folder|app|chat|thing)|those|them)\b/i;
 
 /** One reminder before finishing Mac work: compare the screen with the user's exact words. */
-function macCheckPrompt(request: string, apps: string[]): string {
+function macCheckPrompt(request: string, apps: string[], unconfirmed: string[] = []): string {
   return [
-    `Before you answer: mac_look${apps.length ? ` at ${apps.join(", ")}` : ""} and check the result against exactly what the user asked: "${request.slice(0, 600)}".`,
+    `Before you answer: mac_look${apps.length ? ` at ${apps.join(", ")}` : ""} (or page_look for a web page) and check the result against exactly what the user asked: "${request.slice(0, 600)}".`,
+    ...(unconfirmed.length
+      ? [`These steps came back "no visible change", so they are NOT confirmed: ${[...new Set(unconfirmed)].slice(0, 12).join("; ")}. Look for each one. Anything you can't see on screen, list in your answer as "not confirmed" — never as done.`]
+      : []),
     "Check the exact names they used (folder, playlist, song, person, file), that it happened in the window you were working in, and that only one copy of the app is open.",
+    "Anything you made or changed through a script or a connection (a calendar event, reminder, note, mail draft): read it back the same way and check its title, date, time and people.",
     "If it doesn't match, fix it — up to two more tries. If it still doesn't match, tell the user plainly what happened instead (e.g. \"I ended up in All Songs, not Great\"). Never say it's done unless the look shows it.",
     "The user already sees your answer above: if the look confirms it, don't repeat it — say only what's new, in one short line.",
     "If a step didn't work at first and another way did, save that with remember (kind lesson), starting with the app's name, e.g. \"Retro Deck: folders open with a double-click\" — so it works the first time next time.",
@@ -301,7 +382,9 @@ function macCheckPrompt(request: string, apps: string[]): string {
 /** Final-action approvals on screen right now, by what they'd cover, so a repeat joins the same card. */
 const finalsWaiting = new Map<string, Promise<{ approved: boolean }>>();
 
-const BROWSER_APP = /brave|chrome|safari|arc|vivaldi|edge|firefox|opera|chromium/i;
+const BROWSER_APP = /brave|chrome|safari|\barc\b|ardia|\bdia\b|vivaldi|edge|firefox|opera|chromium|\bzen\b|orion|comet|helium|thorium|floorp|waterfox|librewolf|sigmaos|yandex/i;
+/** A browser: a known name, or any app E.V has set up in Settings → Browsers. */
+const isBrowser = (app: string) => BROWSER_APP.test(app) || Boolean(useSettings.getState().settings.browsers?.known?.[app]);
 
 /**
  * Where in an app an action happens, in a form that stays the same next time: the website in a
@@ -309,7 +392,7 @@ const BROWSER_APP = /brave|chrome|safari|arc|vivaldi|edge|firefox|opera|chromium
  * times taken out (in a chat app that's the person or channel).
  */
 async function placeOf(app: string, windowTitle: string): Promise<string> {
-  if (BROWSER_APP.test(app)) {
+  if (isBrowser(app)) {
     const tabs = await macTabs(app, "list").catch(() => []);
     const front = tabs.find((t) => t.active && t.window === 1) ?? tabs.find((t) => t.active);
     try {
@@ -506,6 +589,12 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   // Once live data has been used, each step's text is held back: if the step turns out to be the
   // final answer it is fact-checked before the user sees or hears it.
   let researched = false;
+  /** What this turn really did, for the fact-check ("✓ Change 6 things on cstimer — 6 done"). */
+  const actionsDone: string[] = [];
+  /** The same record without looks: what the user's report lists when the model gives none. */
+  const changesDone: string[] = [];
+  /** Why E.V writes the report itself at the end (set when the model ended without one). */
+  let reportWhy = "";
   let held = "";
   const flush = () => {
     frame = null;
@@ -555,7 +644,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
 
   const connected = runningConnections();
   const system = [
-    buildSystemPrompt({ modelLabel: modelLabel(chat.model), context, userSystemPrompt: settings.systemPrompt, memory: memoryPrompt(chatId), userBrowser: await userBrowser() }),
+    buildSystemPrompt({ modelLabel: modelLabel(chat.model), context, userSystemPrompt: settings.systemPrompt, memory: memoryPrompt(chatId), ...(await userBrowser(content).then((b) => ({ userBrowser: b.name, browserKnown: b.known, otherBrowsers: b.others, browserAccess: browserAccess(b.name) }))) }),
     connected.length
       ? `# Connections\nThe user connected: ${connected.map((c) => CONNECTION_NAMES[c] ?? c).join(", ")}. Their tools start with c_<connection>__. Prefer them over clicking through apps (e.g. Gmail through Google, notes and reminders through Apple apps).${
           connected.includes("browser")
@@ -669,6 +758,24 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         await new Promise((resolve) => setTimeout(resolve, 400));
       }
       return false;
+    },
+    ask: async (question, choices) => {
+      const step: ToolStep = {
+        id: uid("step-"),
+        name: "ask_user",
+        args: {},
+        title: question.length > 80 ? `${question.slice(0, 79)}…` : question,
+        needsApproval: false,
+        status: "pending",
+        question: { question, options: choices.map((label) => ({ label })), multi: false },
+      };
+      useChats.getState().addBlock(chatId, reply.id, { type: "tool", step });
+      sayNow(`${question} ${choices.map((c) => c.replace(/\s*\(Recommended\)/i, "")).join(", or ")}?`, uid("ask-"));
+      const answer = await askUser(step.id, signal);
+      if (signal.aborted) throw new AbortedError();
+      const picked = answer?.[0] ?? null;
+      useChats.getState().patchStep(chatId, reply.id, step.id, { status: picked ? "done" : "denied", question: { ...step.question!, answer }, result: picked ?? "Skipped" });
+      return picked;
     },
     noteUndo: (before) => {
       for (const [key, value] of Object.entries(before) as [keyof typeof settingsBefore, number | boolean | null][]) {
@@ -816,6 +923,34 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     return value as T;
   };
   let agentCount = 0;
+  // Long text a tool brought back (a video's words) boiled down to what the task needs, on the
+  // provider's quicker model where there is one — only the result goes into the conversation.
+  env.summarize = async (text, instruction) => {
+    const model = FAST_STEP[provider]?.(chat.model.model) ?? chat.model.model;
+    let value = "";
+    const current = useChats.getState().chats.find((c) => c.id === chatId);
+    await keyEngine.execute({ provider, model, chatId: `${chatId}#summary`, pinnedKeyId: current?.pinnedKeyId }, async (key) => {
+      const out = await adapter.step({
+        model,
+        key: key.key,
+        system: "You pull exact facts out of source text for another AI that is doing a task. Answer with the facts only — no preamble, no advice.",
+        conversation: [providerUserTurn(provider, `${instruction}\n\n---\n${text}`)],
+        tools: [],
+        signal,
+        onText: () => {},
+        thinking: false,
+      });
+      value = out.text;
+      if (out.usage) {
+        turnUsage.input += out.usage.input;
+        turnUsage.cached += out.usage.cached;
+        turnUsage.output += out.usage.output;
+        useUsage.getState().add(out.usage);
+      }
+      return out.headers;
+    });
+    return value;
+  };
   /** condense_document parts per document, with the first source page of each (for merging page ranges). */
   const condensed = new Map<string, { page: number; html: string }[]>();
 
@@ -829,10 +964,24 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   let lastMacLookAt = -1;
   let macCheckAsked = false;
   const macAppsUsed = new Set<string>();
+  /** Steps that said "no visible change": not done until a look shows them. */
+  const unconfirmed: string[] = [];
   // Documents whose latest version still fails E.V's checks; the AI can't finish on them (twice at most).
   const documentProblems = new Map<string, string[]>();
   let documentPushes = 0;
   const turnUsage = { input: 0, cached: 0, output: 0, steps: 0 };
+  // Which model the last step ran on, whether that step only carried out a plan, and how many
+  // stuck steps already went to the stronger model.
+  let shownModel = chat.model.model;
+  let lastStepMechanical = false;
+  let strongSteps = 0;
+  // Where the job is, for the progress line: the AI's task list or approved plan when it has one.
+  let checklist: { done: number; total: number; label: string } | null = null;
+  const showProgress = (label: string) => {
+    const at = useChats.getState().chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === reply.id)?.progress?.startedAt ?? reply.createdAt;
+    const shown = checklist ? { done: checklist.done, total: checklist.total, label: checklist.label || label } : { done: turnUsage.steps, total: 0, label };
+    useChats.getState().patchMessage(chatId, reply.id, { progress: { ...shown, startedAt: at } });
+  };
   // Guessed addresses per site (not taken from a page or the request): two, then click instead.
   const guesses = new Map<string, number>();
   let seenText = content;
@@ -843,6 +992,11 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   let stall = 0;
   const stallTitles: string[] = [];
   const lookSigs = new Map<string, string>();
+  // Shared finishing rules: promise-only replies get sent back (twice at most), an empty ending
+  // gets one request for the answer, and an exact action that did nothing twice is not run again.
+  let promiseNudges = 0;
+  let wrapAsked = false;
+  const noChange = new Map<string, number>();
 
   try {
     // Long chats: fold older messages into the running summary (the chat's own model writes it).
@@ -900,13 +1054,29 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     for (let step = 0; ; step++) {
       if (step >= MAX_STEPS) {
         onText(`\n\n_Stopped after ${MAX_STEPS} actions. Send "continue" to keep going._`);
+        reportWhy = `Stopped after ${MAX_STEPS} actions.`;
         break;
       }
+      // Carrying out what's already planned runs on the quicker model; a stuck task gets a few
+      // steps on a stronger one (never with Think on, never for a chat that needs to see pictures).
+      let callModel = stepModel;
+      if (!thinking && !seesImages(stepModel)) {
+        const strong = stall >= 2 && strongSteps < STRONG_STEPS_MAX ? STRONG_STEP[provider]?.(stepModel) : null;
+        const fast = lastStepMechanical ? FAST_STEP[provider]?.(stepModel) : null;
+        if (strong) {
+          callModel = strong;
+          strongSteps++;
+        } else if (fast) callModel = fast;
+      }
+      if (callModel !== shownModel) {
+        shownModel = callModel;
+        useChats.getState().patchMessage(chatId, reply.id, { model: { provider, model: callModel } });
+      }
       held = "";
-      const result = await runWithKey(stepModel, async (key) => {
+      const result = await runWithKey(callModel, async (key) => {
         held = "";
         leak.reset();
-        const out = await adapter.step({ model: stepModel, key, system: turnSystem, conversation: [...base, ...keepRecentPictures(provider, turnItems)], tools, signal, onText, thinking, onThinking });
+        const out = await adapter.step({ model: callModel, key, system: turnSystem, conversation: [...base, ...keepRecentPictures(provider, turnItems)], tools, signal, onText, thinking, onThinking });
         return { value: out, headers: out.headers };
       });
       const { calls, item } = result;
@@ -934,6 +1104,20 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         if (!spoken.trim() && !held.trim()) show("Something went wrong with that answer. Ask me again?");
       }
       if (calls.length === 0) {
+        // Said what it would do, did nothing: nothing happened, so it goes back to do it.
+        if (promiseNudges < 2 && onlyPromises(result.text) && !signal.aborted) {
+          promiseNudges++;
+          if (held) show(held);
+          held = "";
+          flushNow();
+          breakBeforeNext = spoken.trim().length > 0;
+          turnItems.push(
+            userTurn(
+              `You said what you'd do but didn't do it — no tool ran, so nothing happened yet. Do it now with your tools; don't announce it again. Only if you truly need something from the user first, ask with ask_user. The user asked: "${content.slice(0, 600)}".`,
+            ),
+          );
+          continue;
+        }
         // About to finish: if this task made or changed files it hasn't looked at since, or changed
         // code without running anything, it gets one reminder to check its work first.
         const failing = [...documentProblems].filter(([, problems]) => problems.length);
@@ -962,13 +1146,13 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
           );
           continue;
         }
-        if (!macCheckAsked && lastMacActAt > lastMacLookAt && !signal.aborted) {
+        if (!macCheckAsked && (lastMacActAt > lastMacLookAt || unconfirmed.length > 0) && !signal.aborted) {
           macCheckAsked = true;
           if (held) show(held);
           held = "";
           flushNow();
           breakBeforeNext = spoken.trim().length > 0;
-          turnItems.push(userTurn(macCheckPrompt(content, [...macAppsUsed])));
+          turnItems.push(userTurn(macCheckPrompt(content, [...macAppsUsed], unconfirmed)));
           continue;
         }
         if (!verifyAsked && changedAt.size) {
@@ -983,6 +1167,20 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
             turnItems.push(userTurn(verifyPrompt(content, unchecked, codeChanged)));
             continue;
           }
+        }
+        // Ended with no words after doing things: one request for the answer; if it still says
+        // nothing, E.V writes the report itself from its record.
+        if (!result.text.trim() && changesDone.length && !signal.aborted) {
+          if (!wrapAsked) {
+            wrapAsked = true;
+            turnItems.push(
+              userTurn(
+                `You stopped without answering. Answer the user now in a few lines, from the step results above: what you changed, what didn't work and why, and anything you couldn't confirm. Don't claim anything the results don't show. The user asked: "${content.slice(0, 600)}".`,
+              ),
+            );
+            continue;
+          }
+          reportWhy = "The model ended without saying what it did.";
         }
         break;
       }
@@ -1317,6 +1515,9 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
             if (index >= 0 && index < planStep.plan.progress.length && ["doing", "done", "skipped"].includes(status)) {
               planStep.plan = { ...planStep.plan, progress: planStep.plan.progress.map((p, i) => (i === index ? status : p)) };
               useChats.getState().patchStep(chatId, reply.id, planStep.id, { plan: planStep.plan });
+              const left = planStep.plan.progress.findIndex((p) => p !== "done" && p !== "skipped");
+              checklist = { done: planStep.plan.progress.filter((p) => p === "done" || p === "skipped").length, total: planStep.plan.progress.length, label: left >= 0 ? (planStep.plan.steps[left] ?? "") : "Finishing" };
+              showProgress("");
             }
           }
           useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "done", result: "" });
@@ -1326,22 +1527,54 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         // A picture the chat's model can't see: the user decides how to look (Settings → Models).
         let seeOnce = false;
         if (provider === "deepseek" && wantsPicture(call.name, call.args) && !seesImages(stepModel)) {
-          const how = await howToSee(chatId, reply.id, modelLabel({ provider, model: stepModel }), signal);
+          const how = await howToSee(chatId, reply.id, modelLabel({ provider, model: stepModel }), signal, call.name === "video_frames" ? "pictures from the video" : undefined);
           if (signal.aborted) throw new AbortedError();
           if (how === "switch") {
             useChats.getState().requestModel(chatId, VISION_FLASH);
             stepModel = VISION_FLASH.model;
             researchModel = VISION_FLASH.model;
           } else if (how === "once") seeOnce = true;
-          else if (call.name === "mac_screen") {
+          else if (call.name === "video_frames") {
+            useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "done", result: "No pictures — your choice" });
+            results.push({ call, output: "The user chose not to use pictures. Don't guess what the video shows: ask the user for the values you need with ask_user, or work with what the video's words say." });
+            continue;
+          } else if (call.name === "mac_screen") {
             useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "done", result: "Reading as text instead" });
             results.push({ call, output: "The user chose not to use a picture. Read the screen as text instead: mac_front to see what's in front, then mac_look on that app (no picture)." });
             continue;
           } else call.args = { ...call.args, picture: false };
         }
+        // The exact action already did nothing twice: a third try won't either.
+        const actionSig = MAC_ACTS.has(call.name) ? `${call.name}|${JSON.stringify(call.args)}` : "";
+        if (actionSig && (noChange.get(actionSig) ?? 0) >= 2) {
+          useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "denied", result: "Not repeated — it did nothing twice" });
+          results.push({ call, output: CIRCLE_NOTE });
+          continue;
+        }
         useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "running" });
+        if (call.name === "todo_write" && Array.isArray(call.args.todos)) {
+          const todos = call.args.todos as { content?: unknown; status?: unknown }[];
+          const current = todos.find((t) => t.status === "in_progress") ?? todos.find((t) => t.status !== "completed");
+          checklist = todos.length ? { done: todos.filter((t) => t.status === "completed").length, total: todos.length, label: current ? String(current.content ?? "") : "Finishing" } : null;
+        }
+        showProgress(toolStep.title);
         env.memory = { chatId, chatTitle: chatTitle(), stepId: toolStep.id, userText: content, heardByVoice: Boolean(options.announce) };
         let outcome = await executeTool(call.name, call.args, env);
+        // Timeouts, the same way for every kind of tool: a look is tried once more; an action is
+        // never resent blind (part of it may have happened).
+        if (!outcome.ok && TIMED_OUT.test(outcome.display)) {
+          if (MAC_LOOKS.has(call.name) || RESEARCH_TOOLS.has(call.name)) {
+            useChats.getState().patchStep(chatId, reply.id, toolStep.id, { status: "running", result: "Timed out — trying once more" });
+            outcome = await executeTool(call.name, call.args, env);
+            if (!outcome.ok && TIMED_OUT.test(outcome.display)) outcome = { ...outcome, output: `${outcome.output}\n${STUCK_NOTE}` };
+          } else outcome = { ...outcome, output: `${outcome.output}\n${TIMEOUT_ACT_NOTE}` };
+          if (signal.aborted) throw new AbortedError();
+        }
+        if (actionSig && outcome.ok && NO_CHANGE.test(outcome.display)) {
+          const times = (noChange.get(actionSig) ?? 0) + 1;
+          noChange.set(actionSig, times);
+          if (times >= 2) outcome = { ...outcome, output: `${outcome.output}\n${CIRCLE_NOTE}` };
+        }
         const pictures = [outcome.image, ...(outcome.images ?? [])].filter((p): p is string => Boolean(p));
         if (seeOnce && pictures.length) {
           // Flash · Vision reads this one picture; the chat's own model keeps working from its words.
@@ -1362,10 +1595,20 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         }
         if (MAC_TOOLS.has(call.name)) trail.action(outcome, toolStep.needsApproval === true);
         if (MAC_ACTS.has(call.name) && !(call.name === "mac_tabs" && call.args.action !== "switch")) lastMacActAt = step;
+        // Connected services (calendar, mail, notes…) get the same check: a write is read back.
+        if (CONNECTION_WRITE.test(call.name) && outcome.ok) lastMacActAt = step;
         // An action whose window check already showed the change counts as a look: no extra full look.
-        if ((MAC_LOOKS.has(call.name) && outcome.ok) || outcome.confirmed === true) lastMacLookAt = step;
+        if ((MAC_LOOKS.has(call.name) && outcome.ok) || (CONNECTION_READ.test(call.name) && !CONNECTION_WRITE.test(call.name) && outcome.ok) || outcome.confirmed === true) lastMacLookAt = step;
         if (typeof call.args.app === "string" && call.args.app.trim()) macAppsUsed.add(call.args.app.trim());
         if (LOOKS_LOCAL.has(call.name)) readLocal = true;
+        if (!RESEARCH_TOOLS.has(call.name)) {
+          const shown = `${toolStep.title} — ${outcome.display}`.slice(0, 220);
+          const mark = !outcome.ok ? "✗" : NO_CHANGE.test(outcome.display) ? "?" : "✓";
+          const line = `${mark} ${shown}${mark === "?" ? " (not confirmed)" : ""}`;
+          actionsDone.push(line);
+          if (mark === "?") unconfirmed.push(toolStep.title);
+          if (!MAC_LOOKS.has(call.name) && call.name !== "video_frames" && category !== "internal") changesDone.push(line);
+        }
         if (outcome.ok) {
           const target = typeof call.args.path === "string" ? absolutePath(call.args.path, env.cwd, env.home) : "";
           if (call.name === "write_file" || call.name === "edit_file") changedAt.set(target, step);
@@ -1393,14 +1636,16 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         if (category !== "internal") log(toolStep, outcome.ok ? "done" : outcome.display.startsWith("Refused") ? "refused" : "error", outcome.display);
         results.push({ call, output: outcome.output, image: outcome.image, images: outcome.images });
         seenText += `\n${outcome.output}`;
-        if (call.name === "mac_scroll" || (call.name === "mac_look" && typeof call.args.find === "string" && call.args.find.trim())) scrolledOrSearched = true;
+        if (call.name === "mac_scroll" || ((call.name === "mac_look" || call.name === "page_look") && typeof call.args.find === "string" && call.args.find.trim())) scrolledOrSearched = true;
         // Progress: something visibly changed, or a look shows a different window than last time.
-        if (outcome.ok && outcome.confirmed !== false) {
+        if (outcome.ok && outcome.confirmed !== false && !NO_CHANGE.test(outcome.display)) {
           if (MAC_LOOKS.has(call.name)) {
+            // Searching the same screen for different words isn't progress; a different screen is.
+            const searched = typeof call.args.find === "string" && call.args.find.trim().length > 0;
             const app = String(call.args.app ?? "");
             const sig = `${outcome.display}|${outcome.output.length}`;
-            if (lookSigs.get(app) !== sig) stepProgress = true;
-            lookSigs.set(app, sig);
+            if (!searched && lookSigs.get(app) !== sig) stepProgress = true;
+            if (!searched) lookSigs.set(app, sig);
           } else stepProgress = true;
         }
       }
@@ -1419,6 +1664,9 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       turnItems.push(...adapter.toolResults(results, stepModel));
       // Older looks of a window that was just looked at again are out of date: one line each.
       turnItems.splice(0, turnItems.length, ...supersedeLooks(provider, turnItems));
+      if (turnUsage.steps > 0 && turnUsage.steps % SLIM_EVERY === 0) turnItems.splice(0, turnItems.length, ...slimOldLooks(provider, turnItems, SLIM_KEEP));
+      // Only carrying out actions in apps and pages, every one of which worked: the next step can go to the quicker model.
+      lastStepMechanical = planned.length > 0 && planned.every((p) => MAC_TOOLS.has(p.call.name)) && results.every((r) => !/^(Error|Refused|Not done|Stopped at)/m.test(r.output) && !/nothing changed|no visible change|shows no change/i.test(r.output));
       stall = stepProgress ? 0 : stall + 1;
       stallTitles.push(...planned.map((p) => p.step.title));
       if (stall >= STALL_LIMIT) {
@@ -1428,6 +1676,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
         const tried = [...new Set(stallTitles.slice(-8))].join("; ");
         onText(`\n\nI stopped: the last ${STALL_LIMIT} steps changed nothing. I tried: ${tried}. Tell me what to try, or say "keep trying".`);
         flushNow();
+        reportWhy = "Stopped going in circles.";
         break;
       }
       // Only quick actions this step, all done: confirm locally instead of asking the AI to.
@@ -1455,7 +1704,7 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       const timeUp = new Promise<CheckOutcome>((resolve) => checkAbort.signal.addEventListener("abort", () => resolve({ verdict: "unchecked" }), { once: true }));
       check = await Promise.race([
         runWithKey(researchModel, async (key) => {
-          const out = await factCheck({ adapter, model: researchModel, key, question: content, sources, draft, signal: checkAbort.signal });
+          const out = await factCheck({ adapter, model: researchModel, key, question: content, sources, draft, actions: actionsDone, signal: checkAbort.signal });
           return { value: out.outcome, headers: out.headers };
         }).catch((): CheckOutcome => ({ verdict: "unchecked" })),
         timeUp,
@@ -1471,6 +1720,10 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
       flushNow();
     } else if (held) {
       show(held);
+      flushNow();
+    }
+    if (reportWhy && changesDone.length) {
+      show(`\n\n${stepReport(changesDone, reportWhy)}`);
       flushNow();
     }
     if (Object.keys(settingsBefore).length) {
@@ -1496,6 +1749,8 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     if (reasoningTimer) clearTimeout(reasoningTimer);
     useChats.getState().patchMessage(chatId, reply.id, {
       pending: false,
+      progress: undefined,
+      took: Date.now() - reply.createdAt,
       ...(reasoning ? { reasoning } : {}),
       transcript: { provider, items: compactTranscript(provider, turnItems) },
       ...(spoken || hadActions ? {} : { error: "The model returned an empty response." }),
@@ -1508,9 +1763,11 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
   } catch (err) {
     // An answer that never got checked is still better shown than lost.
     if (held) show(held);
+    const aborted = err instanceof AbortedError || signal.aborted;
+    // Stopped or failed part-way: still say what was already done.
+    if (changesDone.length) show(`\n\n${stepReport(changesDone, aborted ? "Stopped." : "That stopped on an error.")}`);
     flushNow();
     useChats.getState().patchMessage(chatId, reply.id, { checking: false });
-    const aborted = err instanceof AbortedError || signal.aborted;
     // Cards still waiting when the turn ends were never approved.
     const message = useChats.getState().chats.find((c) => c.id === chatId)?.messages.find((m) => m.id === reply.id);
     for (const block of message?.blocks ?? []) {
@@ -1520,6 +1777,8 @@ export async function sendMessage(chatId: string, text: string, options: SendOpt
     }
     useChats.getState().patchMessage(chatId, reply.id, {
       pending: false,
+      progress: undefined,
+      took: Date.now() - reply.createdAt,
       // An interrupted turn may end on an unanswered tool call, which providers reject on replay;
       // later turns see this one as text plus a summary of its actions instead.
       transcript: undefined,

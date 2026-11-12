@@ -61,7 +61,7 @@ export const CATEGORIES: Record<Category, CategoryInfo> = {
   browser: { label: "Use the extra headless browser (Connections)", detail: "Research and click through websites in the background — never your own browser's tabs", level: "just" },
   gideon_browser: {
     label: "Use the E.V Browser",
-    detail: "Its own hidden Vivaldi with its own Google account — browse, click, type, sign in, post. Never your own browser; money and passwords stay blocked",
+    detail: "Its own hidden browser with its own Google account — browse, click, type, sign in, post. Never your own browser; money and passwords stay blocked",
     level: "just",
   },
   browser_personal: { label: "Type your personal details into a website", detail: "Emails, phone numbers, addresses — or anything after reading your files", level: "plan" },
@@ -150,7 +150,7 @@ const SCRIPT_DELETES = /\b(delete|trash|erase|remove|empty)\b/i;
 
 /** The app a Mac action is aimed at, if any. */
 export function appOf(name: string, args: Record<string, unknown>): string {
-  if (["mac_open", "mac_look", "mac_click", "mac_drag", "mac_menu", "mac_tabs", "mac_quit"].includes(name)) return str(args.app);
+  if (["mac_open", "mac_look", "mac_click", "mac_drag", "mac_menu", "mac_tabs", "mac_quit", "page_look", "page_do"].includes(name)) return str(args.app);
   if (name === "mac_applescript") return /tell application "([^"]+)"/i.exec(str(args.script))?.[1] ?? "";
   return "";
 }
@@ -174,6 +174,8 @@ export function categoryFor(name: string, args: Record<string, unknown>, ctx: Po
     case "wikipedia":
       return "web";
     case "web_fetch":
+    case "video_facts":
+    case "video_frames":
       return ctx.readLocal ? "share_local" : "web";
     case "read_file":
     case "list_directory":
@@ -203,8 +205,12 @@ export function categoryFor(name: string, args: Record<string, unknown>, ctx: Po
       // Finding (and opening) your own file with Spotlight: like double-clicking it in Finder.
       return args.open === true ? "open" : "look_app";
     case "mac_look":
-      // Reading one app's window changes nothing: never asks (never-touch apps are caught above).
+    case "page_look":
+      // Reading one app's window (or a page in it) changes nothing: never asks (never-touch apps are caught above).
       return "look_app";
+    case "page_do":
+      // Like clicking: sends, deletes, money and passwords are judged per action right before it runs.
+      return "prepare";
     case "mac_screen":
       return "look_screen";
     case "mac_front":

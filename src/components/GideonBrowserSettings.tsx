@@ -4,8 +4,8 @@ import { openBrowserPanel } from "../services/browserPanel";
 import { useVault } from "../store/vault";
 
 /**
- * Settings → Connections: the E.V Browser — E.V's own hidden copy of Vivaldi with its own
- * logins. Signing in opens it normally (Google refuses sign-in in a browser that's being
+ * Settings → Connections: the E.V Browser — E.V's own hidden copy of a Chromium browser on this
+ * Mac (Chrome, Brave, Edge, Vivaldi…) with its own logins. Signing in opens it normally (Google refuses sign-in in a browser that's being
  * controlled); once signed in, E.V uses it hidden and stays logged in.
  */
 export function GideonBrowserSettings() {
@@ -30,7 +30,7 @@ export function GideonBrowserSettings() {
   const state = !status
     ? "…"
     : !status.installed
-      ? "Vivaldi isn't installed"
+      ? "No Chromium browser on this Mac — install Google Chrome, Brave, Edge or Vivaldi"
       : status.signingIn
         ? "Open for signing in — quit it (⌘Q) when you're done"
         : status.running
@@ -43,7 +43,7 @@ export function GideonBrowserSettings() {
     <div className="settings-card">
       <h4>E.V Browser</h4>
       <p className="settings-intro">
-        E.V's own copy of Vivaldi with its own logins — separate from your Vivaldi, which it never sees unless you say “my Vivaldi”. It runs hidden: no window, no Dock
+        E.V's own copy of {status?.engine ?? "a Chromium browser"} with its own logins — separate from your own browsers, which it never sees. It runs hidden: no window, no Dock
         icon, your mouse and keyboard untouched. Inside it E.V browses, clicks, types, signs in and posts without asking; money pages and buttons, passwords, codes and
         file uploads stay blocked.
       </p>

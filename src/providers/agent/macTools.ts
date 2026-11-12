@@ -22,10 +22,12 @@ import {
   type MacActionResult,
 } from "../../lib/ipc";
 import type { ToolDefinition } from "./tools";
+import { describePageTool, executePageTool, PAGE_TOOL_DEFINITIONS, PAGE_TOOLS } from "./pageTools";
 
 /** Tools that let any AI in E.V use the Mac the way a person would. */
 
 export const MAC_TOOL_DEFINITIONS: ToolDefinition[] = [
+  ...PAGE_TOOL_DEFINITIONS,
   {
     name: "mac_open",
     description:
@@ -98,7 +100,7 @@ export const MAC_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "mac_tabs",
     description:
-      "The user's own browser tabs (Brave, Chrome, Vivaldi, Arc, Edge, Safari). action 'list' shows every open tab (window, tab, title, address; * = the tab showing). action 'switch' makes one the showing tab — by window and tab number, or by 'matching' text from its title or address (e.g. 'music.youtube.com') — in the background unless show=true. Use a tab that's already open instead of opening the site again: 'switch' with 'matching' straight away; list only if that fails. To get to a tab use this (or click the tab in the tab strip) — never keyboard shortcuts: ⌘⇧T reopens a closed tab, ⌘T opens a new one. Never opens or closes tabs.",
+      "The user's own browser tabs (any browser: Chrome, Brave, Arc, Edge, Vivaldi, Ardia, Safari…). action 'list' shows every open tab (window, tab, title, address; * = the tab showing). action 'switch' makes one the showing tab — by window and tab number, or by 'matching' text from its title or address (e.g. 'music.youtube.com') — in the background unless show=true. Use a tab that's already open instead of opening the site again: 'switch' with 'matching' straight away; list only if that fails. To get to a tab use this (or click the tab in the tab strip) — never keyboard shortcuts: ⌘⇧T reopens a closed tab, ⌘T opens a new one. Never opens or closes tabs.",
     parameters: {
       type: "object",
       properties: {
@@ -236,7 +238,7 @@ export const MAC_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "mac_applescript",
     description:
-      "Run AppleScript (or JavaScript for Automation) to control a scriptable app: Finder, Music, Spotify, Safari/Chrome/Vivaldi tabs, Mail drafts, Notes, Reminders, Calendar, System Events. Faster and more reliable than clicking when the app supports it. Shown to the user before it runs.",
+      "Run AppleScript (or JavaScript for Automation) to control a scriptable app: Finder, Music, Spotify, browser tabs (never code inside pages — that's page_look / page_do), Mail drafts, Notes, Reminders, Calendar, System Events. Faster and more reliable than clicking when the app supports it. Shown to the user before it runs.",
     parameters: {
       type: "object",
       properties: {
@@ -286,6 +288,8 @@ export interface MacEnv {
   waitForScreen: (what: string) => Promise<boolean>;
   /** Remembers the settings from before a change, so "Undo" can put them back. */
   noteUndo: (before: { volume?: number | null; muted?: boolean | null; darkMode?: boolean | null }) => void;
+  /** Asks the user a question with buttons (null when skipped); absent where nobody can answer (replays). */
+  ask?: (question: string, options: string[]) => Promise<string | null>;
 }
 
 /** A finished action in a form that can run again later without the AI: by label, never by number. */
@@ -429,6 +433,7 @@ function shortUrl(url: string): string {
 
 export async function executeMacTool(name: string, args: Record<string, unknown>, env: MacEnv): Promise<MacOutcome> {
   try {
+    if (PAGE_TOOLS.has(name)) return await executePageTool(name, args, env);
     switch (name) {
       case "mac_open": {
         const app = str(args.app);
@@ -702,6 +707,7 @@ export async function executeMacTool(name: string, args: Record<string, unknown>
 /** One plain line for an action on the Mac, for cards and receipts. */
 export function describeMacTool(name: string, args: Record<string, unknown>): string {
   const app = str(args.app);
+  if (PAGE_TOOLS.has(name)) return describePageTool(name, args);
   switch (name) {
     case "mac_open":
       return str(args.target) ? `Open ${str(args.target)}${app ? ` in ${app}` : ""}` : `Open ${app}`;

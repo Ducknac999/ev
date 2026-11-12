@@ -12,6 +12,8 @@ import {
   toolWebFetch,
   toolWebSearch,
   toolWriteFile,
+  videoFacts,
+  videoFrames,
 } from "../../lib/ipc";
 import { uid } from "../../lib/ids";
 import { describeMacTool, executeMacTool, MAC_TOOL_DEFINITIONS, MAC_TOOLS, type MacEnv, type ReplayStep } from "./macTools";
@@ -251,6 +253,33 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       required: ["name"],
     },
   },
+  {
+    name: "video_facts",
+    description:
+      "What a video says, in one step: title, channel, length, chapters, description and its spoken words (subtitles) — YouTube and most video sites. Give `question` (what you need from it, e.g. 'every csTimer setting he changes and its value') and you get just those facts, exact; the full words are saved to a file you can read_file. Use it instead of playing, watching or scrolling a video's page.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The video's address" },
+        question: { type: "string", description: "What you need from the video" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "video_frames",
+    description:
+      "Pictures from a video, for what it only shows on screen (colors, settings panels, layouts, values): give `at` — times like '1:23' (from video_facts' [m:ss] marks or chapters) — or nothing for pictures spread evenly over it. Up to 10 per call. Use after video_facts when its words don't contain what you need.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The video's address" },
+        at: { type: "array", items: { type: "string" }, description: "Times in the video, e.g. ['0:45', '2:10']" },
+        count: { type: "number", description: "With no times: how many pictures, spread evenly (default 6, at most 10)" },
+      },
+      required: ["url"],
+    },
+  },
   ...WORK_TOOL_DEFINITIONS,
   ...MEMORY_TOOL_DEFINITIONS,
   ...MAC_TOOL_DEFINITIONS,
@@ -309,7 +338,7 @@ const INTERNAL = new Set(["todo_write", "load_skill", "calculate", "convert_unit
 const LIVE_DATA = new Set(["get_weather", "sports", "wikipedia"]);
 
 /** Tools that read the outside world; using them marks an answer for fact-checking. */
-export const RESEARCH_TOOLS = new Set(["web_search", "web_fetch", "get_weather", "sports", "wikipedia"]);
+export const RESEARCH_TOOLS = new Set(["web_search", "web_fetch", "get_weather", "sports", "wikipedia", "video_facts"]);
 
 /** Actions that only look at the Mac. Their output counts as local data for `readLocal`. */
 export const LOOKS_LOCAL = new Set(["read_file", "list_directory", "find_files", "search_files", "run_command"]);
@@ -451,6 +480,8 @@ export interface ToolEnv {
   documentParts?: Record<string, string[]>;
   /** Source pages condense_document couldn't turn into a section yet, per document. */
   documentGaps?: Record<string, number[]>;
+  /** Boils long text down to what a task needs, with a quick model call (video_facts). */
+  summarize?: (text: string, instruction: string) => Promise<string>;
 }
 
 export const MAX_SEARCHES_PER_TASK = 3;
@@ -477,6 +508,10 @@ export function isInside(path: string, folder: string): boolean {
 /** Short description for the card header. */
 export function describeTool(name: string, args: Record<string, unknown>): string {
   switch (name) {
+    case "video_facts":
+      return str(args.question) ? `Get from the video: ${str(args.question).slice(0, 80)}` : "Get what the video says";
+    case "video_frames":
+      return Array.isArray(args.at) && args.at.length ? `Look at the video at ${args.at.slice(0, 6).map(String).join(", ")}` : "Look at pictures from the video";
     case "load_tools":
       return `Load more tools (${Array.isArray(args.groups) ? args.groups.join(", ") : ""})`;
     case "read_file":
@@ -790,6 +825,8 @@ export async function executeTool(name: string, args: Record<string, unknown>, e
         const out = await executeBrowserTool(name, args, env.browserTab ?? "main");
         return { output: clip(out.output, MODEL_OUTPUT_LIMIT), display: clip(out.display, DISPLAY_LIMIT), ok: out.ok, image: out.image, graph: out.graph };
       }
+      case "page_look":
+      case "page_do":
       case "mac_open":
       case "mac_look":
       case "mac_do":
@@ -833,6 +870,43 @@ export async function executeTool(name: string, args: Record<string, unknown>, e
       case "convert_units": {
         const value = num(args.value) ?? Number(str(args.value));
         return done(`${value} ${str(args.from)} = ${formatNumber(convertUnits(value, str(args.from), str(args.to)))} ${str(args.to)}`);
+      }
+      case "video_facts": {
+        const v = await videoFacts(str(args.url));
+        const question = str(args.question);
+        const head = [
+          `"${v.title}"${v.channel ? ` by ${v.channel}` : ""}${v.seconds ? ` · ${Math.floor(v.seconds / 60)}:${String(v.seconds % 60).padStart(2, "0")}` : ""}`,
+          v.chapters.length ? `Chapters:\n${v.chapters.join("\n")}` : "",
+          v.description ? `Description:\n${clip(v.description, 1500)}` : "",
+        ].filter(Boolean);
+        if (!v.transcript) return { output: [...head, `No spoken words: ${v.note || "the video has no captions."}`].join("\n\n"), display: `${v.title} · no captions`, ok: true };
+        const words = v.transcript.split(/\s+/).length;
+        let body = `Spoken words (${words}):\n${clip(v.transcript, 12_000)}`;
+        if (question && env.summarize && v.transcript.length > 3000) {
+          const facts = await env
+            .summarize(
+              `Video: ${v.title}\n${v.chapters.length ? `Chapters:\n${v.chapters.join("\n")}\n` : ""}Description:\n${clip(v.description, 1500)}\n\nTranscript:\n${clip(v.transcript, 60_000)}`,
+              `List every fact from this video that answers: ${question}\nBe exact — names, values, colors, numbers, steps, in the order the video gives them. Say "not said" for parts the video doesn't cover. Only facts from the video. At most 40 lines.`,
+            )
+            .catch(() => "");
+          if (facts.trim()) body = `What it says about "${question}":\n${facts.trim()}`;
+        }
+        return {
+          output: [...head, body, v.file ? `Full words saved at ${v.file} (read_file for more).` : ""].filter(Boolean).join("\n\n"),
+          display: `${v.title} · ${words} words${v.source === "yt-dlp" ? "" : " (YouTube)"}`,
+          ok: true,
+        };
+      }
+      case "video_frames": {
+        const at = Array.isArray(args.at) ? args.at.map(String).filter(Boolean) : undefined;
+        const v = await videoFrames(str(args.url), at, num(args.count) ?? undefined);
+        const list = v.frames.map((f, i) => `Picture ${i + 1}: at ${f.at}`).join("\n");
+        return {
+          output: `${v.frames.length} pictures from the video (it is ${Math.floor(v.seconds / 60)}:${String(v.seconds % 60).padStart(2, "0")} long):\n${list}${v.failed.length ? `\nCouldn't read: ${v.failed.join("; ")}` : ""}\nRead values off the pictures exactly; if one isn't legible, say so rather than guess.`,
+          display: `${v.frames.length} pictures at ${v.frames.map((f) => f.at).join(", ")}`,
+          ok: true,
+          images: v.frames.map((f) => f.image),
+        };
       }
       case "todo_write": {
         const todos = Array.isArray(args.todos) ? (args.todos as { content?: unknown; status?: unknown }[]) : [];

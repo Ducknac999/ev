@@ -435,6 +435,16 @@ pub(crate) fn pid_of(app: &str) -> Option<i32> {
     Some(pid)
 }
 
+/// The app's pid without side effects (never asks the hidden E.V Browser to step aside).
+pub(crate) fn pid_of_quiet(app: &str) -> Option<i32> {
+    let kept = WORKING_IN.lock().unwrap().as_ref().and_then(|m| m.get(&app_key(app)).copied());
+    kept.filter(|&p| alive(p)).or_else(|| find_pid(app))
+}
+
+pub(crate) fn bundle_path(pid: i32) -> Option<String> {
+    bundle_path_of(pid)
+}
+
 fn find_pid(app: &str) -> Option<i32> {
     let out = run("/usr/bin/lsappinfo", &["info", "-only", "pid", app]).unwrap_or_default();
     if let Some(pid) = out.split('=').nth(1).and_then(|p| p.trim().parse().ok()).filter(|p: &i32| *p > 0) {
@@ -445,8 +455,10 @@ fn find_pid(app: &str) -> Option<i32> {
     running_apps().into_iter().find(|(name, pid)| name.eq_ignore_ascii_case(app.trim_end_matches(".app")) && Some(*pid) != crate::gideon_browser::own_pid()).map(|(_, pid)| pid)
 }
 
+/// The app shares its name with the hidden E.V Browser (which runs on one of the user's Chromium
+/// browsers with a profile of its own), so asking for it by name is ambiguous while that runs.
 fn is_vivaldi(app: &str) -> bool {
-    app.to_lowercase().contains("vivaldi")
+    crate::gideon_browser::shares_name(app)
 }
 
 /// Every running app with a name, as macOS lists them.
@@ -1711,7 +1723,7 @@ pub fn money_blocked(target: &str) -> bool {
     MONEY_APPS.iter().any(|a| t == *a || t.trim_end_matches(".app") == *a)
 }
 
-const MONEY_REFUSAL: &str = "NEVER:money — E.V never does anything involving money. Tell the user what to do themselves.";
+pub(crate) const MONEY_REFUSAL: &str = "NEVER:money — E.V never does anything involving money. Tell the user what to do themselves.";
 
 pub(crate) fn run_timed(program: &str, args: &[&str], seconds: u64) -> Result<String, String> {
     let mut child = std::process::Command::new(program)
@@ -1757,13 +1769,18 @@ pub async fn mac_open(target: Option<String>, app: Option<String>, background: O
         // the user's — and never to E.V's, which has a profile of its own.
         if is_vivaldi(&app) && crate::gideon_browser::own_pid().is_some() {
             if target.contains("://") {
-                std::process::Command::new("/Applications/Vivaldi.app/Contents/MacOS/Vivaldi")
+                let exe = crate::browser::info_for(&app).map(|i| std::path::PathBuf::from(i.path)).ok().and_then(|p| {
+                    let name = std::process::Command::new("/usr/bin/plutil").args(["-extract", "CFBundleExecutable", "raw", "-o", "-"]).arg(p.join("Contents/Info.plist")).output().ok()?;
+                    Some(p.join("Contents/MacOS").join(String::from_utf8_lossy(&name.stdout).trim()))
+                });
+                let Some(exe) = exe else { return Err(format!("couldn't find {app}")) };
+                std::process::Command::new(exe)
                     .arg(&target)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .spawn()
-                    .map_err(|e| format!("couldn't open Vivaldi: {e}"))?;
+                    .map_err(|e| format!("couldn't open {app}: {e}"))?;
                 return Ok(format!("Opened {target} in {app}"));
             }
             if target.is_empty() {
@@ -1843,7 +1860,9 @@ pub async fn mac_applescript(script: String, javascript: Option<bool>) -> Result
             crate::gideon_browser::step_aside();
         }
         // Running code inside the user's browser pages could do anything their logins allow.
-        if BROWSERS.iter().any(|b| lower.contains(&format!("application \"{b}")) || lower.contains(&format!("app(\"{b}"))) && (lower.contains("javascript") || lower.contains("devtools")) {
+        let names_browser = BROWSERS.iter().any(|b| lower.contains(&format!("application \"{b}")) || lower.contains(&format!("app(\"{b}")))
+            || scripted_apps(&script).iter().any(|a| crate::browser::info_for(a).is_ok_and(|i| i.engine != "unknown"));
+        if names_browser && (lower.contains("javascript") || lower.contains("devtools")) {
             return Err(DEVTOOLS_REFUSAL.into());
         }
         // Scripted keystrokes and clicks would skip the Send/Delete checks in mac_click and mac_key.
@@ -1859,6 +1878,22 @@ pub async fn mac_applescript(script: String, javascript: Option<bool>) -> Result
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Apps a script talks to: `tell application "X"` and JXA's `Application("X")`.
+fn scripted_apps(script: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (open, close) in [("application \"", '"'), ("Application(\"", '"'), ("Application('", '\'')] {
+        let mut rest = script;
+        while let Some(at) = rest.find(open) {
+            rest = &rest[at + open.len()..];
+            if let Some(end) = rest.find(close) {
+                out.push(rest[..end].to_string());
+                rest = &rest[end..];
+            }
+        }
+    }
+    out
 }
 
 #[tauri::command]
@@ -2136,7 +2171,7 @@ pub fn mac_default_browser() -> String {
         .unwrap_or_else(|| "Safari".into())
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserTab {
     pub window: usize,
@@ -2157,6 +2192,10 @@ fn is_safari(app: &str) -> bool {
 
 // `tab` can't be the separator: inside `tell application "Brave Browser"` it means a browser tab
 // (the text "tab"), so Chromium browsers listed nothing. `sep` is set outside the tell block.
+pub(crate) fn browser_tabs(app: &str) -> Result<Vec<BrowserTab>, String> {
+    list_tabs(app)
+}
+
 fn list_tabs(app: &str) -> Result<Vec<BrowserTab>, String> {
     let (active, title) = if is_safari(app) { ("current tab of window w", "name") } else { ("active tab of window w", "title") };
     let script = format!(
@@ -2184,7 +2223,8 @@ fn switch_tab(app: &str, window: usize, tab: usize, show: bool) -> Result<(), St
     // The window comes to the top of the browser's own windows (so its page is the one read), but the
     // browser itself only comes forward when the user asked to see it.
     let front = if show { "\nactivate" } else { "" };
-    let script = format!("tell application {}\n{pick}\nset index of window {window} to 1{front}\nend tell", script_text(app));
+    // Some browsers (Ardia) don't let scripts reorder their windows: the tab still switches.
+    let script = format!("tell application {}\n{pick}\ntry\nset index of window {window} to 1\nend try{front}\nend tell", script_text(app));
     run_timed("/usr/bin/osascript", &["-e", &script], 8).map(|_| ())
 }
 
@@ -2207,11 +2247,13 @@ pub async fn mac_tabs(app: String, action: String, window: Option<usize>, tab: O
         if money_blocked(&target.url) {
             return Err(MONEY_REFUSAL.into());
         }
-        let (w, t) = (target.window, target.tab);
+        let (w, t, url) = (target.window, target.tab, target.url.clone());
         switch_tab(&app, w, t, show.unwrap_or(false))?;
         std::thread::sleep(Duration::from_millis(250));
         let now = list_tabs(&app)?;
-        Ok(now.into_iter().filter(|x| x.active && x.window == 1).collect())
+        // The window moves to the front where the browser allows it; where it doesn't, it stays put.
+        let shown = now.iter().find(|x| x.active && x.url == url && (x.window == 1 || x.window == w)).or_else(|| now.iter().find(|x| x.active && x.window == 1)).cloned();
+        Ok(shown.into_iter().collect())
     })
     .await
     .map_err(|e| e.to_string())?

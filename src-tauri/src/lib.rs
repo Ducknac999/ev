@@ -12,6 +12,7 @@ mod doc;
 mod external;
 mod http;
 mod live;
+mod browser;
 mod gideon_browser;
 mod mac_control;
 mod mcp;
@@ -163,6 +164,10 @@ pub fn run() {
                 return Ok(());
             }
             gideon_browser::set_app(app.handle().clone());
+            browser::bridge::set_app(app.handle().clone());
+            if let Ok(data) = tauri::Manager::path(app).app_data_dir() {
+                browser::bridge::start(data);
+            }
             control::start(app.handle().clone());
             notch_window::start(app.handle().clone());
             caffeine::start(app.handle().clone());
@@ -252,6 +257,16 @@ pub fn run() {
             mac_control::mac_menu,
             mac_control::mac_tabs,
             mac_control::mac_default_browser,
+            browser::browsers_list,
+            browser::browser_info,
+            browser::page_look,
+            browser::page_do,
+            browser::browser_switch_on,
+            browser::browsers_set_preferred,
+            browser::bridge::browser_extension_install,
+            browser::bridge::browser_extension_status,
+            browser::video::video_facts,
+            browser::video::video_frames,
             ptt::ptt_configure,
             ptt::dictate_configure,
             ptt::approval_keys_configure,

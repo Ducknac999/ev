@@ -48,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
     clipboard: { enabled: true, shortcut: "shift+command+c", limit: 100, ignoreApps: ["1Password", "Bitwarden", "Keychain Access", "Passwords", "Dashlane", "LastPass"] },
   },
   background: { keepNotchOnQuit: true, openAtLogin: false },
+  browsers: { preferred: null, notUsing: [], known: {} },
   spending: { dailyLimit: 0 },
   customServer: { baseUrl: "" },
   agents: { claude: true, codex: false },
@@ -156,12 +157,13 @@ function normalize(raw: unknown): Settings {
   };
   const background = (input.background ?? {}) as Partial<Settings["background"]>;
   settings.background = { keepNotchOnQuit: background.keepNotchOnQuit !== false, openAtLogin: background.openAtLogin === true };
+  settings.browsers = normalizeBrowsers(input.browsers);
   const limit = Number(input.spending?.dailyLimit);
   settings.spending = { dailyLimit: Number.isFinite(limit) && limit > 0 ? limit : 0 };
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };
   settings.agents = { claude: input.agents?.claude !== false, codex: input.agents?.codex === true };
   settings.onboarded = input.onboarded === true;
-  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(7, Math.round(input.onboardStart)));
+  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(8, Math.round(input.onboardStart)));
   if (input.movedFromPersonal === true) settings.movedFromPersonal = true;
   // 1.0.2 had one setting ("always" | "auto" | "compact"); it splits into style and showing.
   const old = (input as { topBar?: string }).topBar;
@@ -238,6 +240,26 @@ export const useSettings = create<SettingsState>((set, get) => ({
     void get().save({ ...current, recentFolders }).catch(() => {});
   },
 }));
+
+const ROUTES = ["script", "extension", "accessibility"];
+
+export function normalizeBrowsers(input: unknown): Settings["browsers"] {
+  const raw = (input && typeof input === "object" ? input : {}) as Partial<Settings["browsers"]>;
+  const known: Settings["browsers"]["known"] = {};
+  for (const [name, value] of Object.entries(raw.known && typeof raw.known === "object" ? raw.known : {})) {
+    const v = value as Partial<Settings["browsers"]["known"][string]>;
+    if (!name.trim() || !v || typeof v !== "object") continue;
+    known[name] = {
+      engine: typeof v.engine === "string" ? v.engine : "unknown",
+      route: typeof v.route === "string" && ROUTES.includes(v.route) ? v.route : "accessibility",
+      ...(v.switch === "on" || v.switch === "off" || v.switch === "declined" ? { switch: v.switch } : {}),
+      ...(v.extension === true ? { extension: true } : {}),
+      checkedAt: typeof v.checkedAt === "number" ? v.checkedAt : 0,
+    };
+  }
+  const names = (list: unknown) => (Array.isArray(list) ? [...new Set(list.filter((n): n is string => typeof n === "string" && n.trim().length > 0))] : []);
+  return { preferred: typeof raw.preferred === "string" && raw.preferred.trim() ? raw.preferred.trim() : null, notUsing: names(raw.notUsing), known };
+}
 
 export function normalizeFeatures(input: unknown): Settings["notch"]["features"] {
   const f = (input ?? {}) as Partial<Settings["notch"]["features"]>;

@@ -486,7 +486,7 @@ export const macClipboard = (write?: string) => invoke<string>("mac_clipboard", 
 export const macSystem = (change: { volume?: number; muted?: boolean; darkMode?: boolean }) =>
   invoke<MacSystemState>("mac_system", { volume: change.volume ?? null, muted: change.muted ?? null, darkMode: change.darkMode ?? null });
 
-// ── The E.V Browser (its own hidden Vivaldi) ──────────────────────────────
+// ── The E.V Browser (its own hidden copy of a Chromium browser on this Mac) ──
 
 export interface PageView {
   url: string;
@@ -515,6 +515,8 @@ export interface BrowserStatus {
   visible: boolean;
   signingIn: boolean;
   profile: string;
+  /** The browser it runs on ("Google Chrome"); null when there's no Chromium browser. */
+  engine: string | null;
 }
 export const gbStatus = () => invoke<BrowserStatus>("gb_status");
 export const gbOpen = (url: string, tab?: string, picture = false) => invoke<PageView>("gb_open", { url, tab: tab ?? null, picture });
@@ -562,7 +564,7 @@ export const approvalKeysConfigure = (approve: string, always: string, cancel: s
 export const approvalKeysActive = (on: boolean) => invoke<void>("approval_keys_active", { on });
 /** Sends an approval to the Vorssaint notch; resolves with its answer (rejects "offline"). */
 export const notchRequest = (id: string, request: Record<string, unknown>) =>
-  invoke<"allow" | "always" | "deny" | "defer" | "withdrawn" | "closed">("notch_request", { id, request });
+  invoke<string>("notch_request", { id, request });
 export const notchWithdraw = (id: string) => invoke<void>("notch_withdraw", { id });
 /** One-way notch message; false when Vorssaint isn't running. */
 export const notchMessage = (event: "listening" | "heard" | "say" | "waiting" | "clear", text: string, seconds?: number) =>
@@ -592,6 +594,105 @@ export interface BrowserTab {
 export const macTabs = (app: string, action: "list" | "switch", target: { window?: number; tab?: number; matching?: string } = {}, show = false) =>
   invoke<BrowserTab[]>("mac_tabs", { app, action, window: target.window ?? null, tab: target.tab ?? null, matching: target.matching ?? null, show });
 export const macDefaultBrowser = () => invoke<string>("mac_default_browser");
+
+// ── Any browser, from the inside (src-tauri/src/browser) ─────────────────────
+export interface BrowserInfo {
+  name: string;
+  path: string;
+  bundleId: string;
+  /** blink · webkit · gecko · goanna · libweb · servo · unknown */
+  engine: string;
+  engineLabel: string;
+  scriptable: boolean;
+  extensions: boolean;
+  /** script · extension · accessibility */
+  route: string;
+  running: boolean;
+  isDefault: boolean;
+  connected: boolean;
+}
+export interface PageLook {
+  app: string;
+  engine: string;
+  engineLabel: string;
+  via: string;
+  title: string;
+  url: string;
+  total: number;
+  shown: number;
+  matching: number | null;
+  controls: string[];
+  text: string | null;
+}
+export interface PageAction {
+  do: "click" | "set" | "check" | "select" | "press" | "scroll" | "wait";
+  ref?: number;
+  label?: string;
+  role?: string;
+  value?: string;
+  option?: string;
+  on?: boolean;
+  key?: string;
+  ms?: number;
+  confirm?: boolean;
+}
+export interface PageTarget {
+  do: string;
+  role?: string;
+  label?: string;
+  own?: string;
+  near?: string;
+}
+export interface PageDo {
+  verdict: "ok" | "final" | "never" | "approved";
+  target: string;
+  done: string[];
+  failed: string | null;
+  failedIndex: number | null;
+  url: string;
+  title: string;
+  navigated: boolean;
+  changed: string[];
+  added: string[];
+  moreAdded: number;
+  removed: number;
+  via: string;
+  targets: PageTarget[];
+  /** Popups the page raised while E.V acted, and how they were answered. */
+  dialogs: string[];
+}
+export interface ExtensionSetup {
+  folder: string;
+  page: string;
+  steps: string[];
+}
+export const browsersList = () => invoke<BrowserInfo[]>("browsers_list");
+export const browserInfo = (app: string) => invoke<BrowserInfo>("browser_info", { app });
+export const pageLook = (app: string, tab?: string, find?: string, text = false) => invoke<PageLook>("page_look", { app, tab: tab ?? null, find: find ?? null, text });
+export const pageDo = (app: string, actions: PageAction[], tab?: string, approved = false) => invoke<PageDo>("page_do", { app, tab: tab ?? null, actions, approved });
+export const browserSwitchOn = (app: string) => invoke<string>("browser_switch_on", { app });
+export const browsersSetPreferred = (name: string | null) => invoke<void>("browsers_set_preferred", { name });
+export const browserExtensionInstall = (browser: string) => invoke<ExtensionSetup>("browser_extension_install", { browser });
+export const browserExtensionStatus = () => invoke<string[]>("browser_extension_status");
+export interface VideoFacts {
+  url: string;
+  title: string;
+  channel: string;
+  seconds: number;
+  description: string;
+  chapters: string[];
+  transcript: string;
+  file: string;
+  source: string;
+  note: string;
+}
+export const videoFacts = (url: string) => invoke<VideoFacts>("video_facts", { url });
+export interface VideoFrames {
+  seconds: number;
+  frames: { at: string; image: string }[];
+  failed: string[];
+}
+export const videoFrames = (url: string, at?: string[], count?: number) => invoke<VideoFrames>("video_frames", { url, at: at ?? null, count: count ?? null });
 
 // ── Start window (src-tauri/src/onboard.rs) ──────────────────────────────────
 export interface OnboardTools {
@@ -635,7 +736,8 @@ export const notchKeyboard = (on: boolean) => invoke<void>("notch_keyboard", { o
 export const notchOpenMain = () => invoke<void>("notch_open_main");
 export const notchMainVisible = (visible: boolean) => invoke<void>("notch_main_visible", { visible });
 export const notchDragOut = (paths: string[]) => invoke<void>("notch_drag_out", { paths });
-export const notchAnswer = (id: string, decision: "allow" | "always" | "deny") => invoke<void>("notch_answer", { id, decision });
+/** "allow" / "always" / "deny" for an approval; "answer:" + the chosen labels (JSON list) for a question. */
+export const notchAnswer = (id: string, decision: string) => invoke<void>("notch_answer", { id, decision });
 
 export type Caffeine = { on: boolean; lid: boolean; lidReady: boolean; until: number | null; batteryLimit: number | null; ended: string | null };
 export const caffeineSet = (on: boolean, lid: boolean, minutes?: number, batteryLimit?: number) =>

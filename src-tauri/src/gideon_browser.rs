@@ -1,5 +1,6 @@
-//! The E.V Browser: a separate copy of Vivaldi with its own data folder (its own logins, history
-//! and cookies — never the user's Vivaldi), started hidden and driven over a private pipe
+//! The E.V Browser: a separate copy of a Chromium browser already on the Mac (Vivaldi, Chrome,
+//! Brave, Edge… see browser::hidden_engine) with its own data folder (its own logins, history and
+//! cookies — never the user's), started hidden and driven over a private pipe
 //! (`--remote-debugging-pipe`: no network port, only E.V can talk to it). Pages are read as text
 //! and controlled from inside — real clicks and typing delivered to the page, so the user's mouse,
 //! keyboard and screen are never touched.
@@ -21,16 +22,43 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-const VIVALDI_PATHS: &[&str] = &["/Applications/Vivaldi.app/Contents/MacOS/Vivaldi"];
 const MAX_TEXT: usize = 3500;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The browser program the E.V Browser runs on, chosen once per run of E.V (so its profile and the
+/// name it shares with the user's own copy stay the same while it's open).
+static ENGINE: Mutex<Option<(String, PathBuf)>> = Mutex::new(None);
+
 fn vivaldi() -> Option<PathBuf> {
-    let home = crate::shell_env::home_dir().join("Applications/Vivaldi.app/Contents/MacOS/Vivaldi");
-    VIVALDI_PATHS.iter().map(PathBuf::from).chain([home]).find(|p| p.exists())
+    engine().map(|(_, exe)| exe)
+}
+
+fn engine() -> Option<(String, PathBuf)> {
+    let mut guard = lock(&ENGINE);
+    if let Some(found) = guard.as_ref().filter(|(_, exe)| exe.exists()) {
+        return Some(found.clone());
+    }
+    let found = crate::browser::hidden_engine();
+    guard.clone_from(&found);
+    found
+}
+
+/// The app the E.V Browser runs on ("Google Chrome"), for messages and name checks.
+pub fn engine_name() -> Option<String> {
+    engine().map(|(name, _)| name)
+}
+
+/// `app` names the same program the hidden E.V Browser runs on, so it's ambiguous while that runs.
+pub fn shares_name(app: &str) -> bool {
+    let lower = app.to_lowercase();
+    if lower.trim().is_empty() {
+        return false;
+    }
+    let ours = lock(&ENGINE).as_ref().map(|(n, _)| n.to_lowercase());
+    ours.is_some_and(|n| lower.contains(&n) || n.contains(lower.trim_end_matches(".app")))
 }
 
 /// The E.V Browser's own profile. `GIDEON_BROWSER_PROFILE` points tests at a throwaway one, so
@@ -38,7 +66,14 @@ fn vivaldi() -> Option<PathBuf> {
 pub fn profile_dir() -> PathBuf {
     match std::env::var("GIDEON_BROWSER_PROFILE") {
         Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
-        _ => crate::shell_env::home_dir().join("Library/Application Support/com.ducknac.ev/gideon-browser"),
+        _ => {
+            let base = crate::shell_env::home_dir().join("Library/Application Support/com.ducknac.ev/gideon-browser");
+            // Each browser keeps its own profile (one Chromium browser can't always open another's).
+            match engine_name().map(|n| n.to_lowercase().replace(' ', "-")) {
+                Some(n) if n != "vivaldi" => base.with_file_name(format!("gideon-browser-{n}")),
+                _ => base,
+            }
+        }
     }
 }
 
@@ -136,7 +171,7 @@ struct Browser {
     pid: i32,
     /// A normal window the user can watch; otherwise headless (no window, no Dock icon).
     visible: bool,
-    /// The browser's own user agent minus "Headless", so sites treat it like normal Vivaldi.
+    /// The browser's own user agent minus "Headless", so sites treat it like the normal browser.
     agent: String,
     tabs: Arc<Mutex<HashMap<String, Tab>>>,
     /// Sessions of tabs that haven't opened a page yet (they can't answer anything until they do).
@@ -210,8 +245,9 @@ fn watch_idle() {
     });
 }
 
-/// The E.V Browser is also a "Vivaldi" to macOS: while it runs, asking for "Vivaldi" by name is
-/// ambiguous. Before E.V touches the user's own Vivaldi, the hidden one gets out of the way.
+/// The E.V Browser has the same name as the browser it runs on ("Google Chrome"): while it runs,
+/// asking for that name is ambiguous. Before E.V touches the user's own copy, the hidden one gets
+/// out of the way.
 pub fn step_aside() {
     // While the user is browsing in the panel, lookups skip it by process instead (see mac_control::pid_of).
     if panel_open() || has_user_tabs() {
@@ -278,9 +314,9 @@ fn base_args() -> Vec<String> {
 }
 
 fn launch(visible: bool) -> Result<Arc<Browser>, String> {
-    let exe = vivaldi().ok_or("Vivaldi isn't installed (the E.V Browser is a separate copy of Vivaldi)")?;
+    let exe = vivaldi().ok_or("No Chromium browser on this Mac for the E.V Browser to run on — install Google Chrome, Brave, Edge or Vivaldi")?;
     if signin_open() {
-        return Err("The E.V Browser is open for signing in. Quit it (⌘Q in that Vivaldi window) and try again.".into());
+        return Err("The E.V Browser is open for signing in. Quit it (⌘Q in that window) and try again.".into());
     }
     std::fs::create_dir_all(profile_dir()).map_err(|e| e.to_string())?;
     for attempt in 0..2 {
@@ -349,7 +385,7 @@ fn launch(visible: bool) -> Result<Arc<Browser>, String> {
         let _ = browser.cdp.call("Target.setDiscoverTargets", json!({ "discover": true }), None);
         return Ok(Arc::new(browser));
     }
-    Err("The E.V Browser didn't start. If a Vivaldi window titled with the E.V profile is open, quit it and try again.".into())
+    Err("The E.V Browser didn't start. If a browser window with the E.V profile is open, quit it and try again.".into())
 }
 
 fn spawn_reader(reader: File, cdp: Arc<Cdp>, tabs: Arc<Mutex<HashMap<String, Tab>>>) {
@@ -1439,6 +1475,8 @@ pub struct BrowserStatus {
     pub visible: bool,
     pub signing_in: bool,
     pub profile: String,
+    /// The browser it runs on ("Google Chrome").
+    pub engine: Option<String>,
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -1538,6 +1576,7 @@ pub fn gb_status() -> BrowserStatus {
         visible: running == Some(true),
         signing_in: signin_open(),
         profile: profile_dir().display().to_string(),
+        engine: engine_name(),
     }
 }
 
@@ -1586,7 +1625,7 @@ pub async fn gb_signin() -> Result<(), String> {
             return Ok(());
         }
         kill_strays();
-        let exe = vivaldi().ok_or("Vivaldi isn't installed")?;
+        let exe = vivaldi().ok_or("No Chromium browser on this Mac for the E.V Browser to run on")?;
         std::fs::create_dir_all(profile_dir()).map_err(|e| e.to_string())?;
         let child = Command::new(exe)
             .args(base_args())

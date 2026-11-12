@@ -52,9 +52,33 @@ export function learnedKey(text: string): string {
   return key;
 }
 
+/** Little words that don't change what's asked ("open my study setup" = "open the study setup"). */
+const SMALL_WORDS = new Set(["the", "my", "a", "an", "this", "that", "some", "up", "just", "again", "real", "quick", "quickly"]);
+/** Words that ask for the same thing. */
+const SAME_AS: Record<string, string> = {
+  launch: "open", setup: "set", configure: "set",
+  colour: "color", colours: "color", colors: "color", settings: "setting", options: "setting", preferences: "setting",
+  vid: "video", yt: "youtube",
+};
+
+/** The request's meaning in order: small words dropped, same-meaning words made one. */
+export function meaningKey(key: string): string {
+  return key
+    .split(" ")
+    .filter((w) => w && !SMALL_WORDS.has(w))
+    .map((w) => SAME_AS[w] ?? (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w))
+    .join(" ");
+}
+
 export function findLearned(text: string, tasks: LearnedTask[]): LearnedTask | null {
   const key = learnedKey(text);
-  return key ? (tasks.find((t) => t.key === key) ?? null) : null;
+  if (!key) return null;
+  const exact = tasks.find((t) => t.key === key);
+  if (exact) return exact;
+  // Same words in the same order once small words are gone: the same request said another way.
+  // Order matters ("move A to B" is not "move B to A"), and every remaining word must match.
+  const meaning = meaningKey(key);
+  return meaning.split(" ").length >= 2 ? (tasks.find((t) => meaningKey(t.key) === meaning) ?? null) : null;
 }
 
 /** Saves (or replaces) the steps for a request. */

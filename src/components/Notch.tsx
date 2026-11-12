@@ -42,7 +42,16 @@ type Voice =
   | { kind: "say"; text: string; until: number }
   | { kind: "waiting"; until: number };
 
-type Approval = { id: string; title: string; subtitle: string; detail: string; always: string | null };
+type Approval = {
+  id: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  always: string | null;
+  /** E.V asking something while it works (choices to pick from) rather than asking for an OK. */
+  question?: { question: string; options: { label: string; description?: string }[]; multi: boolean };
+  keys?: string;
+};
 type Files = { key: string; results: FileHit[] };
 type ShelfItem = { path: string; name: string; addedAt: number; missing?: boolean };
 
@@ -171,9 +180,18 @@ export function Notch() {
       listen<{ id: string; request: Record<string, unknown> }>("notch-approval", ({ payload }) => {
         const r = payload.request;
         const s = (v: unknown) => (typeof v === "string" ? v : "");
+        const asked = r.kind === "question" && Array.isArray(r.questions) ? (r.questions[0] as { question?: string; options?: { label: string; description?: string }[]; multiSelect?: boolean }) : null;
         setApprovals((list) => [
           ...list.filter((a) => a.id !== payload.id),
-          { id: payload.id, title: s(r.title) || "E.V needs your OK", subtitle: s(r.subtitle), detail: s(r.detail), always: s(r.alwaysLabel) || null },
+          {
+            id: payload.id,
+            title: s(r.title) || "E.V needs your OK",
+            subtitle: s(r.subtitle),
+            detail: s(r.detail),
+            always: s(r.alwaysLabel) || null,
+            keys: s(r.keysHint),
+            ...(asked?.options?.length ? { question: { question: asked.question ?? s(r.title), options: asked.options, multi: asked.multiSelect === true } } : {}),
+          },
         ]);
       }),
       listen<string>("notch-withdraw", ({ payload }) => setApprovals((list) => list.filter((a) => a.id !== payload))),
@@ -754,7 +772,56 @@ function VoiceLine({ voice, now }: { voice: Voice; now: number }) {
   );
 }
 
+function QuestionCard({ approval, onDone }: { approval: Approval; onDone: (id: string) => void }) {
+  const q = approval.question!;
+  const [picked, setPicked] = useState<string[]>([]);
+  const [own, setOwn] = useState("");
+  const send = (labels: string[] | null) => {
+    void notchAnswer(approval.id, labels ? `answer:${JSON.stringify(labels)}` : "deny").catch(() => {});
+    onDone(approval.id);
+  };
+  return (
+    <div className="notch-card approval question">
+      <div className="notch-card-sub">{approval.subtitle ? `E.V · ${approval.subtitle} asks` : "E.V asks"}</div>
+      <div className="notch-card-title">{q.question}</div>
+      <div className="notch-buttons wrap">
+        {q.options.map((o, i) => (
+          <button
+            key={o.label}
+            className={i === 0 || picked.includes(o.label) ? "primary" : ""}
+            title={o.description}
+            onClick={() => (q.multi ? setPicked((p) => (p.includes(o.label) ? p.filter((x) => x !== o.label) : [...p, o.label])) : send([o.label]))}
+          >
+            {o.label}
+          </button>
+        ))}
+        {q.multi && picked.length > 0 && (
+          <button className="primary" onClick={() => send(picked)}>
+            Send
+          </button>
+        )}
+        <button onClick={() => send(null)}>Skip</button>
+      </div>
+      <input
+        className="notch-own-answer"
+        placeholder="Or type your own answer…"
+        value={own}
+        onChange={(e) => setOwn(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && own.trim()) send([own.trim()]);
+        }}
+      />
+      {approval.keys && <div className="notch-card-keys">{approval.keys}</div>}
+    </div>
+  );
+}
+
 function ApprovalCard({ approval, onDone }: { approval: Approval; onDone: (id: string) => void }) {
+  if (approval.question) return <QuestionCard approval={approval} onDone={onDone} />;
+  return <PermissionCard approval={approval} onDone={onDone} />;
+}
+
+function PermissionCard({ approval, onDone }: { approval: Approval; onDone: (id: string) => void }) {
   const answer = (decision: "allow" | "always" | "deny") => {
     void notchAnswer(approval.id, decision).catch(() => {});
     onDone(approval.id);
