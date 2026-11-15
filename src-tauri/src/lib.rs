@@ -1,4 +1,8 @@
 mod onboard;
+#[cfg(desktop)]
+mod chat_store;
+#[cfg(desktop)]
+mod backup;
 mod calendar;
 mod migrate;
 mod agent_tools;
@@ -219,6 +223,20 @@ pub fn run() {
             onboard::onboard_request_microphone,
             onboard::onboard_request_automation,
             onboard::update_releases,
+            chat_store::chats_load,
+            chat_store::chats_save,
+            chat_store::chats_previous_run_crashed,
+            backup::backup_run,
+            backup::backup_configure,
+            backup::backup_status,
+            backup::backup_default_folder,
+            backup::backup_deleted_chat,
+            backup::backup_forget_deleted_chat,
+            backup::backup_delete_all,
+            backup::backup_restore,
+            backup::backup_restart,
+            backup::backup_set_password,
+            backup::backup_password_set,
             calendar::calendar_sync,
             migrate::move_from_personal_available,
             migrate::move_from_personal,
@@ -348,6 +366,7 @@ pub fn run() {
             pty::pty_signal,
             pty::pty_kill,
             pty::pty_alive,
+            pty::pty_describe,
             pty::pty_log,
             pty::pty_stats,
             shadow::workspace_clone,
@@ -385,6 +404,8 @@ pub fn run() {
                 app_mode::show_main(app);
             }
             if let tauri::RunEvent::Exit = event {
+                backup::on_quit(app);
+                chat_store::mark_clean_exit(app);
                 ptys_on_exit.kill_all();
                 mcp::stop_all();
                 bg::stop_all();

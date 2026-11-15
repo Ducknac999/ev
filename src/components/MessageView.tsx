@@ -177,6 +177,18 @@ export const MessageView = memo(function MessageView({ message }: { message: Cha
         <div className={`msg-error${message.error === "Stopped" ? " soft" : ""}`}>
           {message.error !== "Stopped" && <Icon name="alert" size={13} />}
           <span>{message.error}</span>
+          {message.error === "Interrupted" && message.role === "assistant" && (
+            <button
+              className="btn"
+              title="Ask E.V to pick up where this reply was cut off"
+              onClick={() => {
+                const chat = useChats.getState().chats.find((c) => c.messages.some((m) => m.id === message.id));
+                if (chat) void sendMessage(chat.id, "Continue where you were cut off. Check what was already done before doing anything again.", { speak: false });
+              }}
+            >
+              Continue
+            </button>
+          )}
         </div>
       )}
     </div>

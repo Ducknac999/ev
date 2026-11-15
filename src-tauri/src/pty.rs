@@ -74,6 +74,11 @@ pub struct SpawnRequest {
     pub claude_args: Option<Vec<String>>,
     pub cols: u16,
     pub rows: u16,
+    /// The user pressed Restart: end the running program and start a new one. Without it, a
+    /// session that is already open is reattached (e.g. the window reloaded after its web view
+    /// crashed) and the program inside keeps running.
+    #[serde(default)]
+    pub restart: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -294,9 +299,16 @@ pub async fn pty_spawn(
     on_event: Channel<PtyEvent>,
     registry: State<'_, Arc<PtyRegistry>>,
 ) -> Result<(), String> {
-    // Starting a session that is already open here is a restart: end the old one for real.
+    // A session that is already open here: a deliberate Restart ends it for real. Otherwise the
+    // window is reconnecting (it reloaded after its web view crashed), so only the old viewer is
+    // closed and the program inside tmux keeps running to be reattached below. Without tmux the
+    // program can't outlive its viewer, so it has to end either way.
     if let Some(existing) = registry.get(&request.id) {
-        existing.end();
+        if request.restart || !existing.tmux {
+            existing.end();
+        } else {
+            existing.kill();
+        }
     }
     let cwd = {
         let path = expand_tilde(&request.cwd);
@@ -698,6 +710,13 @@ set -g destroy-unattached off
         let _ = run(&["kill-session", "-t", &target(id)]);
     }
 
+    /// The folder the session is in and the command it was started with.
+    pub fn describe(id: &str) -> Option<(String, String)> {
+        let out = run(&["display-message", "-p", "-t", &pane(id), "#{pane_current_path}\t#{pane_start_command}"])?;
+        let (cwd, command) = out.trim_end_matches('\n').split_once('\t')?;
+        Some((cwd.to_string(), command.to_string()))
+    }
+
     pub fn pane_pid(id: &str) -> Option<i32> {
         run(&["display-message", "-p", "-t", &pane(id), "#{pane_pid}"])?.trim().parse().ok()
     }
@@ -745,6 +764,20 @@ pub fn pty_alive() -> Vec<String> {
     tmux::alive()
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptSession {
+    pub cwd: String,
+    pub command: String,
+}
+
+/// What a kept tmux session is (folder, start command), so E.V can put a session it doesn't
+/// know back in the sidebar instead of ending it.
+#[tauri::command]
+pub fn pty_describe(id: String) -> Option<KeptSession> {
+    tmux::describe(&id).map(|(cwd, command)| KeptSession { cwd, command })
+}
+
 #[cfg(test)]
 mod tmux_tests {
     use super::*;
@@ -785,7 +818,7 @@ mod tmux_tests {
         let Some(bin) = tmux::binary() else { return };
         std::env::set_var("GIDEON_TMUX_SERVER", format!("gideon-test-{}", std::process::id()));
         let id = "term-survive-test";
-        let request = SpawnRequest { id: id.into(), kind: PtyKind::Command, cwd: "/tmp".into(), command: None, claude_args: None, cols: 80, rows: 24 };
+        let request = SpawnRequest { id: id.into(), kind: PtyKind::Command, cwd: "/tmp".into(), command: None, claude_args: None, cols: 80, rows: 24, restart: false };
         let mut inner = CommandBuilder::new("/bin/sh");
         inner.args(["-c", "echo started-$GIDEON_SESSION_ID; while true; do sleep 1; done"]);
         let spawn = || {
@@ -821,5 +854,65 @@ mod tmux_tests {
         let _ = child.wait();
         assert!(!tmux::exists(id));
         let _ = std::process::Command::new(&bin).args(["-L", &format!("gideon-test-{}", std::process::id()), "kill-server"]).output();
+    }
+
+    /// The window reloading (its web view crashed) reconnects without ending the program inside;
+    /// only Restart ends it. Same as `pty_spawn` does with an already open session.
+    #[test]
+    #[ignore]
+    fn window_reload_keeps_the_session_and_restart_ends_it() {
+        let Some(bin) = tmux::binary() else { return };
+        std::env::set_var("GIDEON_TMUX_SERVER", format!("gideon-test-reload-{}", std::process::id()));
+        let id = "term-reload-test";
+        let request = SpawnRequest { id: id.into(), kind: PtyKind::Command, cwd: "/tmp".into(), command: None, claude_args: None, cols: 80, rows: 24, restart: false };
+        let mut inner = CommandBuilder::new("/bin/sh");
+        inner.args(["-c", "echo started-$GIDEON_SESSION_ID; while true; do sleep 1; done"]);
+        let open = || {
+            let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+            let mut cmd = tmux::command(&bin, &request, std::path::Path::new("/tmp"), &inner);
+            cmd.env("TERM", "xterm-256color");
+            let child = pair.slave.spawn_command(cmd).unwrap();
+            let reader = pair.master.try_clone_reader().unwrap();
+            let writer = pair.master.take_writer().unwrap();
+            let session = PtySession {
+                id: id.into(),
+                kind: PtyKind::Command,
+                cwd: "/tmp".into(),
+                started: now_secs(),
+                killer: Mutex::new(child.clone_killer()),
+                pid: child.process_id(),
+                master: Mutex::new(pair.master),
+                writer: Mutex::new(writer),
+                parser: Mutex::new(vt100::Parser::new(24, 80, 0)),
+                generation: AtomicU64::new(0),
+                scrolled: AtomicU64::new(0),
+                exit_code: Mutex::new(None),
+                window_grid: Mutex::new((80, 24)),
+                tmux: true,
+            };
+            (session, child, reader)
+        };
+
+        let (first, mut first_child, mut reader) = open();
+        assert!(read_until(&mut reader, "started-term-reload-test", Duration::from_secs(8)));
+        let pane = tmux::pane_pid(id).expect("pane pid");
+
+        // Reconnect after a reload: only the old viewer closes.
+        first.kill();
+        let _ = first_child.wait();
+        std::thread::sleep(Duration::from_millis(1700));
+        assert!(tmux::exists(id), "the session survived the window reloading");
+        assert_eq!(tmux::pane_pid(id), Some(pane), "the same program, not a new one");
+
+        let (second, mut second_child, mut reader) = open();
+        assert!(read_until(&mut reader, "started-term-reload-test", Duration::from_secs(8)), "reattached to the same screen");
+        assert_eq!(tmux::pane_pid(id), Some(pane));
+
+        // Restart ends it for real.
+        second.end();
+        let _ = second_child.wait();
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!tmux::exists(id));
+        let _ = std::process::Command::new(&bin).args(["-L", &format!("gideon-test-reload-{}", std::process::id()), "kill-server"]).output();
     }
 }

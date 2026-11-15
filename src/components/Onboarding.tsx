@@ -10,6 +10,7 @@ import {
   onboardRequestMicrophone,
   onboardTools,
   passphraseSet,
+  pickFolder,
   passphraseStatus,
   providerModels,
   type OnboardTools,
@@ -18,6 +19,10 @@ import { uid } from "../lib/ids";
 import { KEY_PAGES, PROVIDER_BASE, PROVIDERS } from "../providers/catalog";
 import { fits, LOCAL_MODELS, pullModel } from "../services/localModels";
 import { useSettings } from "../store/settings";
+import { getVersion } from "@tauri-apps/api/app";
+import { backupDefaultFolder, backupStatus, type BackupSnapshot } from "../lib/ipc";
+import { restoreBackup } from "../services/backups";
+import { BACKUP_FOLDER_PROMPT, BackupChoices, EMPTY_BACKUP, formatWhen, IntervalPicker, SecretsOption } from "./BackupSettings";
 import type { KeyedProviderId, Settings } from "../types";
 import { Icon, type IconName } from "./Icon";
 import { NotchFeatureSwitches } from "./NotchSettings";
@@ -28,7 +33,10 @@ import { VoiceEngineSettings } from "./VoiceEngineSettings";
  * and done later in Settings; nothing here is required to start using E.V.
  */
 
-const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Notch", "Browser", "Done"] as const;
+const STEPS = ["Agents", "API keys", "Local model", "Passphrase", "Permissions", "Voice", "Notch", "Browser", "Backups", "Done"] as const;
+const BACKUP_STEP = 8;
+/** The backup step's choices are read before moving on: Continue waits this long. */
+const BACKUP_READ_MS = 3000;
 
 const KEY_PROVIDERS: KeyedProviderId[] = ["deepseek", "openai", "anthropic", "gemini", "openrouter", "xai", "mistral", "groq"];
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -546,6 +554,128 @@ function NotchStep() {
   );
 }
 
+function BackupStep() {
+  const backup = useSettings((st) => st.settings.backup) ?? EMPTY_BACKUP;
+  const [documents, setDocuments] = useState("");
+  const [found, setFound] = useState<{ folder: string; newest: BackupSnapshot; count: number } | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [message, setMessage] = useState("");
+  const [password, setPassword] = useState("");
+
+  const set = (fn: (b: NonNullable<Settings["backup"]>) => void) =>
+    void change((s) => {
+      const next = { ...(s.backup ?? EMPTY_BACKUP) };
+      fn(next);
+      s.backup = next;
+    });
+
+  // Backups already there (e.g. E.V was installed again): offer to put them back.
+  const look = (folder: string) =>
+    void backupStatus(folder)
+      .then((st) => setFound(st.snapshots.length ? { folder, newest: st.snapshots[0], count: st.snapshots.length } : null))
+      .catch(() => setFound(null));
+
+  useEffect(() => {
+    void backupDefaultFolder().then((d) => {
+      setDocuments(d);
+      look(backup.folder ?? d);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const use = (folder: string) => {
+    set((b) => {
+      b.folder = folder.replace(/\/$/, "");
+      if (b.everyMinutes <= 0) b.everyMinutes = 1440;
+    });
+    look(folder);
+  };
+  const choose = async () => {
+    const folder = await pickFolder(backup.folder ?? documents, BACKUP_FOLDER_PROMPT).catch(() => null);
+    if (folder) use(folder);
+  };
+  const restore = async () => {
+    if (!found) return;
+    setRestoring(true);
+    setMessage("Restoring… E.V will restart.");
+    try {
+      await change((s) => {
+        s.backup = { ...(s.backup ?? EMPTY_BACKUP), folder: found.folder, everyMinutes: s.backup?.everyMinutes || 1440 };
+        s.onboarded = true;
+        delete s.onboardStart;
+      });
+      await restoreBackup(found.folder, found.newest.id, password || null);
+    } catch (e) {
+      setMessage(`Couldn't restore: ${String(e instanceof Error ? e.message : e)}. Nothing was changed.`);
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <>
+      <h2>Backups</h2>
+      <p className="ob-lead">
+        In case anything goes wrong, E.V keeps a backup of your chats, attached files, layout, settings and Claude Code / Codex conversations in a folder
+        you pick. If something ever breaks, open <strong>Settings → Backups</strong> and click Restore. If E.V won't open at all, install it again and pick
+        the same folder here — E.V offers to put everything back. Only changes are copied; no AI, no tokens. API keys go in only if you choose, locked
+        with a password.
+      </p>
+      {found && (
+        <div className="ob-card on">
+          <div className="ob-card-head">
+            <Icon name="restore" size={16} />
+            <strong>Backups found</strong>
+          </div>
+          <p className="ob-card-about">
+            {found.count} backup{found.count === 1 ? "" : "s"} in this folder, the newest from {formatWhen(found.newest.at)} with {found.newest.chats} chat
+            {found.newest.chats === 1 ? "" : "s"}. Restore from your backup?
+          </p>
+          {found.newest.hasSecrets && (
+            <input
+              className="backup-restore-password"
+              type="password"
+              placeholder="Backup password — brings back your API keys and memory (optional)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          )}
+          <button className="btn neon" disabled={restoring} onClick={() => void restore()}>
+            {restoring ? "Restoring…" : "Restore from my backup"}
+          </button>
+          {message && <p className="ob-card-about">{message}</p>}
+        </div>
+      )}
+      <div className="field">
+        <span>Where to keep backups</span>
+        <div className="backup-folder">
+          <code>{backup.folder ? `${backup.folder.replace(/\/E\.V Backups$/, "")}/E.V Backups` : "Not chosen yet"}</code>
+          {documents && backup.folder !== documents && (
+            <button className="btn" onClick={() => use(documents)}>
+              Use Documents
+            </button>
+          )}
+          <button className="btn" onClick={() => void choose()}>
+            Choose…
+          </button>
+        </div>
+        <span className="backup-hint">An external drive or iCloud Drive keeps your backups safe even if this Mac stops working.</span>
+      </div>
+      {backup.folder && (
+        <>
+          <div className="field">
+            <span>How often</span>
+            <IntervalPicker minutes={backup.everyMinutes} onChange={(m) => set((b) => void (b.everyMinutes = m))} />
+          </div>
+          <BackupChoices keepDeleted={backup.keepDeleted} keepForever={backup.keepForever} onChange={(c) => set((b) => Object.assign(b, c))} />
+          <SecretsOption on={backup.includeSecrets} onChange={(on) => set((b) => void (b.includeSecrets = on))} />
+          <p className="backup-hint">Backups use at most 1 GB unless you change it in Settings → Backups.</p>
+        </>
+      )}
+      <SkipNote />
+    </>
+  );
+}
+
 function DoneStep() {
   const s = useSettings((st) => st.settings);
   const keys = Object.entries(s.providers).filter(([id, p]) => id !== "ollama" && p.keys.length).map(([id]) => PROVIDERS[id as KeyedProviderId].label);
@@ -613,12 +743,27 @@ export function Onboarding() {
     const timer = window.setInterval(refresh, 4000);
     return () => window.clearInterval(timer);
   }, []);
+  // A fresh install starts on the newest version: no "What's new" for it.
   const finish = () =>
-    void change((s) => {
-      s.onboarded = true;
-      delete s.onboardStart;
-    });
+    void getVersion()
+      .catch(() => undefined)
+      .then((version) =>
+        change((s) => {
+          s.onboarded = true;
+          delete s.onboardStart;
+          if (version) s.whatsNewSeen = version;
+        }),
+      );
   const last = STEPS.length - 1;
+  const [readUntil, setReadUntil] = useState(0);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (step !== BACKUP_STEP) return;
+    setReadUntil(Date.now() + BACKUP_READ_MS);
+    const t = window.setTimeout(() => tick((n) => n + 1), BACKUP_READ_MS + 50);
+    return () => window.clearTimeout(t);
+  }, [step]);
+  const reading = step === BACKUP_STEP && Date.now() < readUntil;
 
   return (
     <div className="ob-backdrop">
@@ -645,7 +790,8 @@ export function Onboarding() {
               {step === 5 && <VoiceStep />}
               {step === 6 && <NotchStep />}
               {step === 7 && <BrowserStep />}
-              {step === 8 && <DoneStep />}
+              {step === 8 && <BackupStep />}
+              {step === 9 && <DoneStep />}
               </StepGuard>
             </section>
             <footer className="ob-foot">
@@ -658,7 +804,7 @@ export function Onboarding() {
                   Skip
                 </button>
               )}
-              <button className="btn neon" onClick={() => (step < last ? setStep(step + 1) : finish())}>
+              <button className="btn neon" disabled={reading} onClick={() => (step < last ? setStep(step + 1) : finish())}>
                 {step < last ? "Continue" : "Start using E.V"}
               </button>
             </footer>

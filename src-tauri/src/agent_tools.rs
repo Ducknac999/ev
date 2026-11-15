@@ -615,7 +615,7 @@ mod tests {
 
     #[test]
     fn parses_bing_results() {
-        let html = r#"<li class="b_algo" data-id><style>.x{}</style><h2 class=""><a target="_blank" href="https://www.bing.com/ck/a?!&amp;&amp;p=1&amp;u=a1aHR0cHM6Ly93ZWF0aGVyLmNvbS91cy9mcmVtb250&amp;ntb=1">Springfield <strong>Weather</strong></a></h2><div class="b_caption"><p class="b_lineclamp2">Highs near 72.</p></div></li>"#;
+        let html = r#"<li class="b_algo" data-id><style>.x{}</style><h2 class=""><a target="_blank" href="https://www.bing.com/ck/a?!&amp;&amp;p=1&amp;u=a1aHR0cHM6Ly93ZWF0aGVyLmNvbS91cy9zcHJpbmdmaWVsZA&amp;ntb=1">Springfield <strong>Weather</strong></a></h2><div class="b_caption"><p class="b_lineclamp2">Highs near 72.</p></div></li>"#;
         assert_eq!(
             parse_bing(html),
             vec![SearchHit { title: "Springfield Weather".into(), url: "https://weather.com/us/springfield".into(), snippet: "Highs near 72.".into() }]

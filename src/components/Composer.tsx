@@ -16,7 +16,23 @@ import { Icon } from "./Icon";
 const NO_DRAFTS: DraftItem[] = [];
 
 export function Composer({ chat, focused }: { chat: Chat; focused: boolean }) {
-  const [text, setText] = useState("");
+  // Half-typed text survives a crash or restart (kept per chat in this window's storage).
+  const typedKey = `ev.typed.${chat.id}`;
+  const [text, setText] = useState(() => {
+    try {
+      return localStorage.getItem(typedKey) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  useEffect(() => {
+    try {
+      if (text) localStorage.setItem(typedKey, text);
+      else localStorage.removeItem(typedKey);
+    } catch {
+      /* storage unavailable: typing still works */
+    }
+  }, [text, typedKey]);
   const [transcribing, setTranscribing] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);

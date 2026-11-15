@@ -70,6 +70,11 @@ impl Element {
     }
 
     fn app(pid: i32) -> Option<Element> {
+        // Reading E.V's own window this way runs AppKit/WebKit code on a background thread,
+        // which WebKit answers by crashing E.V (Nov 12, 2026). E.V never reads itself here.
+        if is_self(pid) {
+            return None;
+        }
         let el = Element::wrap(unsafe { AXUIElementCreateApplication(pid) })?;
         unsafe { AXUIElementSetMessagingTimeout(el.raw(), 2.0) };
         Some(el)
@@ -422,6 +427,32 @@ fn alive(pid: i32) -> bool {
     pid > 0 && running_apps().iter().any(|(_, p)| *p == pid)
 }
 
+/// E.V's own process (the main app; the hidden E.V Browser and the notch helpers are other pids).
+pub(crate) fn is_self(pid: i32) -> bool {
+    pid == std::process::id() as i32
+}
+
+/// A look at E.V itself: a picture of the screen only, never its controls (see `Element::app`).
+fn look_at_self(name: String) -> Result<Look, String> {
+    let mut image = String::new();
+    if screen_granted() {
+        let path = std::env::temp_dir().join(format!("gideon-self-{}.jpg", std::process::id()));
+        let p = path.to_str().unwrap_or_default().to_string();
+        if run("/usr/sbin/screencapture", &["-x", "-m", "-t", "jpg", &p]).is_ok() && run("/usr/bin/sips", &["-Z", "1600", "-s", "formatOptions", "70", &p]).is_ok() {
+            image = std::fs::read(&path).map(|d| base64_encode(&d)).unwrap_or_default();
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(Look {
+        app: name,
+        window: "E.V".into(),
+        frame: (0.0, 0.0, 0.0, 0.0),
+        image,
+        controls: Vec::new(),
+        note: "This is E.V itself. E.V can't read or click its own controls; this is a picture of the screen only. To change E.V, use its settings or ask the user.".into(),
+    })
+}
+
 pub(crate) fn pid_of(app: &str) -> Option<i32> {
     if is_vivaldi(app) {
         crate::gideon_browser::step_aside();
@@ -632,6 +663,9 @@ pub fn look(app: Option<&str>, picture: bool) -> Result<Look, String> {
         Some(name) => (name.to_string(), background_pid(name)?),
         None => front_app().ok_or("couldn't tell which app is in front")?,
     };
+    if is_self(pid) {
+        return look_at_self(name);
+    }
     let app_el = Element::app(pid).ok_or("couldn't reach that app")?;
     wake_accessibility(&app_el);
     let mut window = main_window(&app_el);

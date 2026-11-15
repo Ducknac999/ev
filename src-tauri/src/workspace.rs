@@ -19,8 +19,9 @@ const CLAUDE_ONLY_SKILLS: &[&str] = &[
 
 /// Native macOS folder chooser. Returns `None` when the user cancels.
 #[tauri::command]
-pub async fn pick_folder(default_path: Option<String>) -> Result<Option<String>, String> {
-    let mut script = String::from("POSIX path of (choose folder with prompt \"Choose a project folder\"");
+pub async fn pick_folder(default_path: Option<String>, prompt: Option<String>) -> Result<Option<String>, String> {
+    let prompt = prompt.unwrap_or_else(|| "Choose a project folder".into()).replace('"', "\\\"");
+    let mut script = format!("POSIX path of (choose folder with prompt \"{prompt}\"");
     if let Some(dir) = default_path.map(|p| expand_tilde(&p)).filter(|p| p.is_dir()) {
         script.push_str(&format!(" default location (POSIX file \"{}\")", dir.display().to_string().replace('"', "\\\"")));
     }

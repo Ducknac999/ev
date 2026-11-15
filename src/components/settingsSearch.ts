@@ -23,6 +23,7 @@ export type Page =
   | "schedule"
   | "activity"
   | "general"
+  | "backups"
   | "updates";
 
 export interface PageInfo {
@@ -76,7 +77,8 @@ export const GROUPS: { label: string; pages: PageInfo[] }[] = [
     label: "App",
     pages: [
       { id: "general", label: "General", icon: "settings", blurb: "The look, closing and quitting, the terminal and setup." },
-      { id: "updates", label: "Updates", icon: "download", blurb: "Check for a new version and install it." },
+      { id: "backups", label: "Backups", icon: "restore", blurb: "Copies of your chats and settings in a folder you pick, and putting them back." },
+      { id: "updates", label: "Updates", icon: "download", blurb: "Check for a new version, install it, and see what's new." },
     ],
   },
 ];
@@ -148,7 +150,10 @@ export const ENTRIES: SettingEntry[] = [
   { title: "Open E.V at login", page: "general", anchor: "quitting", words: "login startup start automatically boot launch restart" },
   { title: "Terminal", page: "general", anchor: "terminal", words: "terminal shell font tmux zsh" },
   { title: "Run setup again", page: "general", anchor: "setup", words: "setup onboarding start wizard welcome first time" },
+  { title: "Backups", page: "backups", anchor: "backups", words: "backup back up copy save restore folder safety crash lost recover" },
+  { title: "Restore a backup", page: "backups", anchor: "backup-list", words: "restore recover undo go back put back lost chats deleted bring back clean up" },
   { title: "Updates", page: "updates", anchor: "updates", words: "update version upgrade release new latest download" },
+  { title: "What's new", page: "updates", anchor: "whats-new", words: "whats new changes changelog release notes news" },
 ];
 
 const STOP = new Set("a an the my me i to of in on for and or is it its this that turn change set make how do can where find setting settings please want".split(" "));

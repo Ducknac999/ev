@@ -3,7 +3,7 @@ import { loadSettingsFile, saveSettingsFile } from "../lib/ipc";
 import { uid } from "../lib/ids";
 import { DEEPSEEK_FLASH, KEYED_PROVIDERS, PROVIDERS, upgradeModel } from "../providers/catalog";
 import { keyEngine } from "../providers/keyPool";
-import type { ApiKey, KeyedProviderId, Settings } from "../types";
+import type { ApiKey, BackupSettings, KeyedProviderId, Settings } from "../types";
 
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
@@ -163,7 +163,7 @@ function normalize(raw: unknown): Settings {
   settings.customServer = { baseUrl: typeof input.customServer?.baseUrl === "string" ? input.customServer.baseUrl : "" };
   settings.agents = { claude: input.agents?.claude !== false, codex: input.agents?.codex === true };
   settings.onboarded = input.onboarded === true;
-  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(8, Math.round(input.onboardStart)));
+  if (typeof input.onboardStart === "number") settings.onboardStart = Math.max(0, Math.min(9, Math.round(input.onboardStart)));
   if (input.movedFromPersonal === true) settings.movedFromPersonal = true;
   // 1.0.2 had one setting ("always" | "auto" | "compact"); it splits into style and showing.
   const old = (input as { topBar?: string }).topBar;
@@ -191,6 +191,10 @@ function normalize(raw: unknown): Settings {
   settings.recentFolders = strings(input.recentFolders).slice(0, MAX_RECENT_FOLDERS);
   const lead = (input.reminders as Partial<Settings["reminders"]> | undefined)?.leadMinutes;
   settings.reminders = { leadMinutes: typeof lead === "number" && lead >= 0 ? Math.min(lead, 24 * 60) : 10 };
+  if (input.backup && typeof input.backup === "object") settings.backup = normalizeBackup(input.backup);
+  else delete settings.backup;
+  if (typeof input.whatsNewSeen === "string") settings.whatsNewSeen = input.whatsNewSeen;
+  else delete settings.whatsNewSeen;
   return settings;
 }
 
@@ -242,6 +246,24 @@ export const useSettings = create<SettingsState>((set, get) => ({
 }));
 
 const ROUTES = ["script", "extension", "accessibility"];
+
+export const BACKUP_MIN_MINUTES = 15;
+export const BACKUP_MAX_MINUTES = 30 * 24 * 60;
+
+export function normalizeBackup(input: unknown): BackupSettings {
+  const b = (input ?? {}) as Partial<BackupSettings>;
+  const every = Number(b.everyMinutes);
+  const limit = Number(b.limitMb);
+  return {
+    folder: typeof b.folder === "string" && b.folder.trim() ? b.folder : null,
+    everyMinutes: Number.isFinite(every) && every > 0 ? Math.min(BACKUP_MAX_MINUTES, Math.max(BACKUP_MIN_MINUTES, Math.round(every))) : 0,
+    keepDeleted: b.keepDeleted === true,
+    keepForever: b.keepForever === true,
+    includeAgents: b.includeAgents !== false,
+    includeSecrets: b.includeSecrets === true,
+    limitMb: Number.isFinite(limit) && limit > 0 ? Math.round(limit) : 0,
+  };
+}
 
 export function normalizeBrowsers(input: unknown): Settings["browsers"] {
   const raw = (input && typeof input === "object" ? input : {}) as Partial<Settings["browsers"]>;

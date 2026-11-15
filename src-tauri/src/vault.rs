@@ -40,6 +40,24 @@ fn read_key() -> Option<[u8; 32]> {
     unhex(String::from_utf8_lossy(&output.stdout).trim())?.try_into().ok()
 }
 
+/// The memory key as it is in the Keychain (for a password-locked backup).
+pub fn key_for_backup() -> Option<[u8; 32]> {
+    read_key()
+}
+
+/// Puts a memory key from a backup into the Keychain, so a restored memory file opens.
+pub fn restore_key(key: &[u8; 32]) -> Result<(), String> {
+    let status = Command::new("/usr/bin/security")
+        .args(["add-generic-password", "-U", "-s", SERVICE, "-a", ACCOUNT, "-w", &hex(key)])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Could not put the memory key back in the Keychain.".into())
+    }
+}
+
 /// The vault key, created on first use. Refuses to make a new key while an encrypted file exists:
 /// that file could then never be opened again.
 fn key(create: bool) -> Result<[u8; 32], String> {

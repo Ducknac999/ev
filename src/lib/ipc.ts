@@ -227,6 +227,8 @@ export interface PtySpawn {
   claudeArgs?: string[];
   cols: number;
   rows: number;
+  /** End the running program and start a new one; otherwise a session already running is reattached. */
+  restart?: boolean;
 }
 
 /** Starts a terminal; resolves once the process is running and streams events to `onEvent`. */
@@ -241,6 +243,59 @@ export const ptySignal = (id: string, signal: "INT" | "TERM" | "KILL") => invoke
 export const ptyKill = (id: string) => invoke<void>("pty_kill", { id });
 /** Sessions tmux kept running while E.V was closed. */
 export const ptyAlive = () => invoke<string[]>("pty_alive");
+export const ptyDescribe = (id: string) => invoke<{ cwd: string; command: string } | null>("pty_describe", { id });
+export const chatsLoad = () => invoke<string | null>("chats_load");
+export const chatsSave = (value: string) => invoke<void>("chats_save", { value });
+
+// ── Backups (src-tauri/src/backup.rs) ────────────────────────────────────────
+
+export interface BackupConfig {
+  folder: string;
+  keepDeleted: boolean;
+  keepForever: boolean;
+  includeAgents: boolean;
+  includeSecrets: boolean;
+  limitMb: number;
+}
+export interface BackupRunReport {
+  saved: boolean;
+  at: number;
+  newFiles: number;
+  bytesAdded: number;
+}
+export interface BackupSnapshot {
+  id: string;
+  at: number;
+  appVersion: string;
+  chats: number;
+  files: number;
+  hasSecrets: boolean;
+}
+export interface BackupDeletedChat {
+  id: string;
+  title: string;
+  deletedAt: number;
+}
+export interface BackupStatus {
+  root: string;
+  snapshots: BackupSnapshot[];
+  lastRun: number;
+  totalBytes: number;
+  deletedChats: BackupDeletedChat[];
+}
+export const backupRun = (config: BackupConfig, localState: string | null) => invoke<BackupRunReport>("backup_run", { config, localState });
+export const backupConfigure = (config: BackupConfig | null) => invoke<void>("backup_configure", { config });
+export const backupStatus = (folder: string) => invoke<BackupStatus>("backup_status", { folder });
+export const backupDefaultFolder = () => invoke<string>("backup_default_folder");
+export const backupDeletedChat = (folder: string, id: string) => invoke<string>("backup_deleted_chat", { folder, id });
+export const backupForgetDeletedChat = (folder: string, id: string) => invoke<void>("backup_forget_deleted_chat", { folder, id });
+export const backupDeleteAll = (folder: string) => invoke<void>("backup_delete_all", { folder });
+export const backupRestore = (config: BackupConfig, id: string, localState: string | null, password: string | null) =>
+  invoke<string | null>("backup_restore", { config, id, localState, password });
+export const backupSetPassword = (password: string) => invoke<void>("backup_set_password", { password });
+export const backupPasswordSet = () => invoke<boolean>("backup_password_set");
+export const backupRestart = () => invoke<void>("backup_restart");
+export const chatsPreviousRunCrashed = () => invoke<boolean>("chats_previous_run_crashed");
 export const ptyLog = (id: string) => invoke<string>("pty_log", { id });
 
 export interface PtyStats {
@@ -257,7 +312,7 @@ export const ptyStats = () => invoke<PtyStats[]>("pty_stats");
 
 // ── Folders, Claude sessions, skills ─────────────────────────────────────────
 
-export const pickFolder = (defaultPath?: string) => invoke<string | null>("pick_folder", { defaultPath: defaultPath ?? null });
+export const pickFolder = (defaultPath?: string, prompt?: string) => invoke<string | null>("pick_folder", { defaultPath: defaultPath ?? null, prompt: prompt ?? null });
 export const pickSavePath = (defaultName: string) => invoke<string | null>("pick_save_path", { defaultName });
 export const saveTextFile = (path: string, contents: string) => invoke<void>("save_text_file", { path, contents });
 

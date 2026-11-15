@@ -10,6 +10,7 @@ import {
   claudeSessions,
   openExternal,
   ptyAlive,
+  ptyDescribe,
   ptyKill,
   ptyResize,
   ptySpawn,
@@ -19,6 +20,7 @@ import {
   type PtyStats,
 } from "../lib/ipc";
 import { activeChats, useChats } from "../store/chats";
+import { chatsLoadFailed } from "../store/chatStorage";
 import { useSettings } from "../store/settings";
 import type { Chat } from "../types";
 
@@ -160,7 +162,7 @@ function onEvent(chat: Chat, handle: Handle, run: number, event: PtyEvent): void
   useTerminals.getState().patch(chat.id, { running: false, exitCode: event.code });
 }
 
-async function spawn(chat: Chat, handle: Handle): Promise<void> {
+async function spawn(chat: Chat, handle: Handle, restart = false): Promise<void> {
   // Codex runs as a command in its own terminal (resuming the folder's last Codex session when reopened).
   const kind = chat.kind === "claude" ? "claude" : chat.kind === "command" || chat.kind === "codex" ? "command" : "shell";
   // Codex: a session restored after a restart picks up where it was (`codex resume --last` in that folder).
@@ -178,6 +180,7 @@ async function spawn(chat: Chat, handle: Handle): Promise<void> {
         claudeArgs: kind === "claude" ? await claudeArgs(chat) : undefined,
         cols: Math.max(20, handle.term.cols),
         rows: Math.max(5, handle.term.rows),
+        restart,
       },
       (event) => onEvent(chat, handle, run, event),
     );
@@ -323,7 +326,7 @@ export function restartTerminal(chat: Chat): void {
   const handle = handles.get(chat.id);
   if (!handle) return;
   handle.term.write("\r\n\x1b[2m[restarting…]\x1b[0m\r\n");
-  void spawn(chat, handle);
+  void spawn(chat, handle, true);
 }
 
 export function setTerminalFontSize(size: number): void {
@@ -379,16 +382,40 @@ export function startTerminals(): void {
   for (const chat of active) restoredAtLaunch.add(chat.id);
   // Which sessions kept running in tmux while E.V was closed — they're reattached, not restarted.
   // tmux sessions whose chat no longer exists (closed elsewhere) are ended.
+  // A session whose chat was closed on purpose is ended. A session E.V has no chat for at all
+  // (e.g. the chat list was lost in a crash) is never ended: it's put back in the sidebar.
   void ptyAlive()
     .catch(() => [] as string[])
-    .then((alive) => {
+    .then(async (alive) => {
       const ids = new Set(active.map((c) => c.id));
+      const known = new Set(useChats.getState().chats.map((c) => c.id));
       for (const id of alive ?? []) {
-        if (ids.has(id)) keptAlive.add(id);
-        else void ptyKill(id).catch(() => {});
+        if (ids.has(id)) {
+          keptAlive.add(id);
+        } else if (known.has(id) && !chatsLoadFailed()) {
+          void ptyKill(id).catch(() => {});
+        } else if (!known.has(id)) {
+          const info = await ptyDescribe(id).catch(() => null);
+          useChats.getState().adoptSession(useSettings.getState().settings, { id, ...keptSessionKind(info?.command ?? "", info?.cwd) });
+          keptAlive.add(id);
+          restoredAtLaunch.add(id);
+        }
       }
       startSessions();
     });
+}
+
+/** What kind of session a kept tmux session is, from the command it was started with. */
+export function keptSessionKind(start: string, cwd?: string): { kind: "claude" | "codex" | "shell" | "command"; cwd?: string; command?: string; claudeSessionId?: string } {
+  const inner = /-c\s+(["'])([\s\S]*)\1\s*$/.exec(start.trim())?.[2] ?? "";
+  const line = inner.replace(/;\s*exec\s+\S+\s+-l\s*$/, "").trim();
+  if (/^claude\b/.test(line)) {
+    const id = /--(?:resume|session-id)\s+'?([0-9a-f-]{36})/.exec(line)?.[1];
+    return { kind: "claude", cwd, claudeSessionId: id };
+  }
+  if (/^codex\b/.test(line)) return { kind: "codex", cwd };
+  if (!line) return { kind: "shell", cwd };
+  return { kind: "command", cwd, command: line };
 }
 
 function startSessions(): void {

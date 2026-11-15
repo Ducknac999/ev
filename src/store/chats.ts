@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { chatFileStorage, markChatsLoaded } from "./chatStorage";
 import { checkAssignment, lockHolder } from "../lib/locks";
 import { uid } from "../lib/ids";
 import { DEEPSEEK_FLASH, pickFallback, PROVIDERS, sameModel, upgradeModel } from "../providers/catalog";
@@ -33,6 +34,8 @@ interface ChatsState {
   createChat: (settings: Settings) => string;
   /** Creates any kind of session; AI chats take the default model unless one is given. */
   createSession: (settings: Settings, options: NewSession) => string;
+  /** Puts a still-running terminal session E.V didn't know about back in the sidebar, under its own id. */
+  adoptSession: (settings: Settings, session: { id: string; kind: SessionKind; cwd?: string; command?: string; claudeSessionId?: string }) => void;
   /** Empty chats are deleted outright; chats with history move to the Closed Chats drawer. */
   closeChat: (id: string) => CloseOutcome;
   restoreChat: (id: string) => void;
@@ -196,6 +199,35 @@ export const useChats = create<ChatsState>()(
           focusSet: s.layout === "focus" && !options.background ? addToFocus(s.focusSet, chat.id) : s.focusSet,
         }));
         return chat.id;
+      },
+
+      adoptSession: (settings, session) => {
+        if (get().chats.some((c) => c.id === session.id)) return;
+        const now = Date.now();
+        const title =
+          session.kind === "command"
+            ? (session.command ?? "Command").slice(0, 40)
+            : `${SESSION_TITLES[session.kind as Exclude<SessionKind, "ai">] ?? "Terminal"} · ${folderName(session.cwd)}`;
+        const chat: Chat = {
+          id: session.id,
+          kind: session.kind,
+          cwd: session.cwd,
+          command: session.command,
+          claudeSessionId: session.claudeSessionId,
+          title,
+          titleIsCustom: true,
+          model: settings.defaultModel,
+          messages: [],
+          status: "idle",
+          paused: null,
+          collapsed: false,
+          archived: false,
+          seq: nextSeq(get().chats),
+          unseen: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+        set((s) => ({ chats: [...s.chats, chat] }));
       },
 
       closeChat: (id) => {
@@ -365,7 +397,7 @@ export const useChats = create<ChatsState>()(
         set((s) => ({
           chats: updateChat(s.chats, chatId, (c) => ({
             ...c,
-            messages: c.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+            messages: (c.messages ?? []).map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
           })),
         })),
 
@@ -373,7 +405,7 @@ export const useChats = create<ChatsState>()(
         set((s) => ({
           chats: updateChat(s.chats, chatId, (c) => ({
             ...c,
-            messages: c.messages.map((m) => {
+            messages: (c.messages ?? []).map((m) => {
               if (m.id !== messageId) return m;
               if (!m.blocks) return { ...m, content: m.content + text };
               const last = m.blocks.at(-1);
@@ -391,7 +423,7 @@ export const useChats = create<ChatsState>()(
           chats: updateChat(s.chats, chatId, (c) => ({
             ...c,
             updatedAt: Date.now(),
-            messages: c.messages.map((m) => (m.id === messageId ? { ...m, blocks: [...(m.blocks ?? []), block] } : m)),
+            messages: (c.messages ?? []).map((m) => (m.id === messageId ? { ...m, blocks: [...(m.blocks ?? []), block] } : m)),
           })),
         })),
 
@@ -399,7 +431,7 @@ export const useChats = create<ChatsState>()(
         set((s) => ({
           chats: updateChat(s.chats, chatId, (c) => ({
             ...c,
-            messages: c.messages.map((m) =>
+            messages: (c.messages ?? []).map((m) =>
               m.id !== messageId || !m.blocks
                 ? m
                 : {
@@ -462,7 +494,13 @@ export const useChats = create<ChatsState>()(
     {
       name: "gideon.workspace",
       version: 5,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => chatFileStorage),
+      // Saving starts only after a successful load, so a failed load can never overwrite the list.
+      onRehydrateStorage: () => (_state, error) => {
+        markChatsLoaded(!error);
+        // Write the loaded list straight away, so the file and its backups exist from the start.
+        if (!error) useChats.setState({});
+      },
       partialize: (s) => ({
         chats: s.chats,
         focusedChatId: s.focusedChatId,
@@ -493,9 +531,9 @@ export const useChats = create<ChatsState>()(
             collapsed: c.collapsed ?? minimized ?? false,
             archived: c.archived ?? false,
             seq: c.seq ?? (seqFromTitle ? Number(seqFromTitle) : i + 1),
-            updatedAt: c.updatedAt ?? c.messages.at(-1)?.createdAt ?? c.createdAt,
+            updatedAt: c.updatedAt ?? c.messages?.at(-1)?.createdAt ?? c.createdAt,
             status: c.status === "streaming" ? ("idle" as const) : c.status,
-            messages: c.messages.map(({ model: messageModel, ...m }) => ({
+            messages: (c.messages ?? []).map(({ model: messageModel, ...m }) => ({
               ...m,
               // Replies from removed providers keep their text but lose the model tag.
               ...(messageModel && messageModel.provider in PROVIDERS ? { model: messageModel } : {}),

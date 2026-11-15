@@ -11,10 +11,13 @@ import { LockConflictModal } from "./components/LockConflictModal";
 import { OrbStage } from "./components/OrbStage";
 import { SessionPanel } from "./components/SessionPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { WhatsNew } from "./components/WhatsNew";
+import { startBackups } from "./services/backups";
+import { useUi } from "./store/ui";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { Workspace } from "./components/Workspace";
-import { openExternal } from "./lib/ipc";
+import { chatsPreviousRunCrashed, openExternal } from "./lib/ipc";
 import { closeChat, requestDelete, toggleCollapsed } from "./services/chatLifecycle";
 import { stopGeneration } from "./services/chatRunner";
 import { startUsageMonitor } from "./services/usageMonitor";
@@ -25,6 +28,7 @@ import { startApprovalPopup } from "./services/approvalPopup";
 import { startQuickPanel } from "./services/quickPanel";
 import { refreshBalance } from "./services/spending";
 import { startTerminals, writeToTerminal } from "./services/terminals";
+import { chatsLoadFailed } from "./store/chatStorage";
 import { startVoiceApprovals } from "./services/voiceApproval";
 import { listen } from "@tauri-apps/api/event";
 import { stopEverything } from "./services/chatRunner";
@@ -197,9 +201,22 @@ export default function App() {
   const mode = useVoice((s) => s.mode);
   const onboarded = useSettings((s) => s.settings.onboarded);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsAt = useUi((s) => s.settingsAt);
   const [closedOpen, setClosedOpen] = useState(false);
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const toggleClosed = useCallback(() => setClosedOpen((o) => !o), []);
+  const [restoredNote, setRestoredNote] = useState(false);
+  const chatsUnreadable = chatsLoadFailed();
+
+  useEffect(() => {
+    void chatsPreviousRunCrashed()
+      .then((crashed) => {
+        if (!crashed) return;
+        setRestoredNote(true);
+        window.setTimeout(() => setRestoredNote(false), 15_000);
+      })
+      .catch(() => {});
+  }, []);
   const closeDrawer = useCallback(() => setClosedOpen(false), []);
 
   useEffect(() => {
@@ -238,6 +255,7 @@ export default function App() {
     startAppMode();
     prewarmRouter();
     startDictation();
+    startBackups();
     void refreshBalance(true);
   }, [loaded]);
 
@@ -251,6 +269,17 @@ export default function App() {
       <div className="ambient" aria-hidden="true" />
       <TopBar onOpenSettings={openSettings} onOpenClosed={toggleClosed} />
       {loadError && <div className="banner-error">Settings could not be read: {loadError}</div>}
+      {chatsUnreadable && (
+        <div className="banner-error">
+          Your chat list couldn't be read, so E.V isn't saving anything over it this time. Your chats and their backups are safe — quit and reopen E.V.
+        </div>
+      )}
+      {restoredNote && !chatsUnreadable && (
+        <div className="banner-info" role="status">
+          E.V closed unexpectedly last time. Your chats and sessions were restored as they were.
+          <button className="btn" onClick={() => setRestoredNote(false)}>OK</button>
+        </div>
+      )}
       <div className="main-row">
         <Sidebar />
         <main className="workspace">
@@ -262,7 +291,15 @@ export default function App() {
       <LockConflictModal />
       <ConfirmDeleteModal />
       <SessionPanel />
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {(settingsOpen || settingsAt) && (
+        <SettingsPanel
+          key={settingsAt ? `${settingsAt.page}-${settingsAt.anchor ?? ""}` : "settings"}
+          initialPage={settingsAt?.page}
+          initialAnchor={settingsAt?.anchor}
+          onClose={() => (setSettingsOpen(false), useUi.setState({ settingsAt: null }))}
+        />
+      )}
+      <WhatsNew />
       <VoiceToast />
       <NoticeToast />
       {!onboarded && <Onboarding />}

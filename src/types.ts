@@ -406,6 +406,10 @@ export interface Settings {
     /** Minutes before an event for the early reminder; 0 = only at the event time. */
     leadMinutes: number;
   };
+  /** Backups to a folder you pick (Settings → Backups). Absent until set up. */
+  backup?: BackupSettings;
+  /** The newest version whose "What's new" was shown. */
+  whatsNewSeen?: string;
 }
 
 export interface LockConflict {
@@ -453,4 +457,21 @@ export interface ScheduleItem {
   until?: string;
   notes?: string;
   createdAt: number;
+}
+
+export interface BackupSettings {
+  /** Where backups go ("E.V Backups" is made inside it); null = not chosen. */
+  folder: string | null;
+  /** Minutes between backups while E.V is open; 0 = off. */
+  everyMinutes: number;
+  /** A chat you delete stays in the backup until you clear it. */
+  keepDeleted: boolean;
+  /** Old backups are never thinned out (the size limit is off too). */
+  keepForever: boolean;
+  /** Copy Claude Code and Codex conversations too (only new or changed parts each time). */
+  includeAgents: boolean;
+  /** Put API keys and the memory key in too, locked with the backup password (kept in the Keychain). */
+  includeSecrets: boolean;
+  /** Most space the backups may use, in MB; 0 = no limit. */
+  limitMb: number;
 }

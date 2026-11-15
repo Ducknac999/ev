@@ -23,6 +23,8 @@ import {
 import { MoveInCard } from "./MoveInCard";
 import { GROUPS, pageInfo, searchSettings, type Page, type SettingEntry } from "./settingsSearch";
 import { UpdateSettings } from "./UpdateSettings";
+import { BackupList, BackupOptions } from "./BackupSettings";
+import { openWhatsNew } from "../store/ui";
 import {
   ActivitySettings,
   ApprovalKeysSettings,
@@ -52,14 +54,14 @@ const splitList = (value: string) =>
     .map((v) => v.trim())
     .filter(Boolean);
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({ onClose, initialPage, initialAnchor }: { onClose: () => void; initialPage?: Page; initialAnchor?: string }) {
   const saved = useSettings((s) => s.settings);
   const save = useSettings((s) => s.save);
   const [draft, setDraft] = useState<Settings>(() => structuredClone(saved));
-  const [tab, setTab] = useState<Page>("models");
+  const [tab, setTab] = useState<Page>(initialPage ?? "models");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(0);
-  const [found, setFound] = useState<string | null>(null);
+  const [found, setFound] = useState<string | null>(initialAnchor ?? null);
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const hits = useMemo(() => searchSettings(query), [query]);
@@ -609,10 +611,31 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <Anchor id="move-in"><MoveInCard /></Anchor>
             </>
           )}
+          {tab === "backups" && (
+            <>
+              <Anchor id="backups">
+                <BackupOptions draft={draft} update={update} />
+              </Anchor>
+              <Anchor id="backup-list">
+                <BackupList draft={draft} />
+              </Anchor>
+            </>
+          )}
           {tab === "updates" && (
-            <Anchor id="updates">
-              <UpdateSettings />
-            </Anchor>
+            <>
+              <Anchor id="whats-new">
+                <div className="settings-card">
+                  <h4>What's new</h4>
+                  <p className="settings-intro">What changed in this version, with a picture of where each thing is and a button that takes you there.</p>
+                  <button className="btn" onClick={() => (onClose(), openWhatsNew())}>
+                    Show what's new
+                  </button>
+                </div>
+              </Anchor>
+              <Anchor id="updates">
+                <UpdateSettings />
+              </Anchor>
+            </>
           )}
         </div>
 
